@@ -3,6 +3,8 @@ from .user import User
 from .api_key import APIKey
 from .user_preference import UserPreference
 from .user_memory import UserMemory, MemoryType
+from .project import Project
+from .session_input import SessionInput
 from .document import Document, DocumentChunk, DocumentStatus
 from .chat_session import ChatSession
 from .chat_message import ChatMessage, MessageRole, MessageStatus
@@ -18,6 +20,8 @@ __all__ = [
     "UserPreference",
     "UserMemory",
     "MemoryType",
+    "Project",
+    "SessionInput",
     "Document",
     "DocumentChunk",
     "DocumentStatus",

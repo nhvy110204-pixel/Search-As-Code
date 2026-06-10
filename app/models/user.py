@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from typing import List, TYPE_CHECKING
 from sqlalchemy import String, Boolean, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -10,6 +9,8 @@ if TYPE_CHECKING:
     from .api_key import APIKey
     from .chat_session import ChatSession
     from .document import Document
+    from .project import Project
+    from .session_input import SessionInput
     from .sac_task import SACTask
 
 class User(AIEntityMixin, Base):
@@ -24,3 +25,5 @@ class User(AIEntityMixin, Base):
     chat_sessions: Mapped[List["ChatSession"]] = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
     tasks: Mapped[List["SACTask"]] = relationship("SACTask", back_populates="user")
     documents: Mapped[List["Document"]] = relationship("Document", back_populates="user", cascade="all, delete-orphan")
+    projects: Mapped[List["Project"]] = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+    session_inputs: Mapped[List["SessionInput"]] = relationship("SessionInput", back_populates="user", cascade="all, delete-orphan")

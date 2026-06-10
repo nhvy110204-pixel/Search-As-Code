@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional, TYPE_CHECKING
 from decimal import Decimal
-from sqlalchemy import DECIMAL, ForeignKey, Integer, String, DateTime, func, text
+from sqlalchemy import DECIMAL, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 

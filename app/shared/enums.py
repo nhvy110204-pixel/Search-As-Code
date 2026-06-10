@@ -25,6 +25,30 @@ class TaskStatus(str, enum.Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+
+class ProjectStatus(str, enum.Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class InputSourceType(str, enum.Enum):
+    TEXT = "text"
+    DOCUMENT = "document"
+    PDF = "pdf"
+    DOCX = "docx"
+    PPTX = "pptx"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
+    URL = "url"
+
+
+class InputStatus(str, enum.Enum):
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    READY = "ready"
+    FAILED = "failed"
+
 class MemoryType(str, enum.Enum):
     FACT = "fact"               # Sự thật trích xuất được (VD: Khách hàng đang dùng Mac M3)
     SUMMARY = "summary"         # Tóm tắt của một Chat Session cũ đã đóng để lưu vết kiến thức

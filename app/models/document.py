@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from typing import Any, List, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 from sqlalchemy import ForeignKey, String, Text, Integer, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -10,33 +10,44 @@ from .base import Base, AIEntityMixin, UUIDMixin
 from app.shared.enums import DocumentStatus
 
 if TYPE_CHECKING:
-    from .chat_session import ChatSession
+    from .project import Project
     from .user import User
 
 class Document(AIEntityMixin, Base):
     """
-    Quản lý một file tài liệu lớn (PDF/Docx/TXT) được upload để làm kho tri thức cho chatbot.
+    Quản lý một file tài liệu lớn (PDF/Docx/TXT/MD) được upload vào một Project.
+    Mỗi document sẽ được convert sang markdown và chunk để phục vụ retrieval.
     """
     __tablename__ = "documents"
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     
     file_name: Mapped[str] = mapped_column(String(255), nullable=False, comment="Tên tài liệu / Tên Project")
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Mô tả tóm tắt nội dung tài liệu")
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False, comment="Đường dẫn file trên Object Storage S3/MinIO")
+    markdown_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="Đường dẫn file markdown sau khi convert")
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[DocumentStatus] = mapped_column(String(20), default=DocumentStatus.PENDING, server_default=text("'pending'"), nullable=False)
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+
+    processing_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
 
     user: Mapped["User"] = relationship("User", back_populates="documents")
+    project: Mapped["Project"] = relationship("Project", back_populates="documents")
 
-    chunks: Mapped[List["DocumentChunk"]] = relationship(
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
         "DocumentChunk", back_populates="document", cascade="all, delete-orphan", order_by="DocumentChunk.chunk_index"
     )
 
-    chat_sessions: Mapped[List["ChatSession"]] = relationship("ChatSession", back_populates="document", cascade="all, delete-orphan")
-
     __table_args__ = (
+        Index("idx_documents_project_status", "project_id", "status"),
         Index("idx_documents_user_status", "user_id", "status"),
     )
 
@@ -51,6 +62,9 @@ class DocumentChunk(UUIDMixin, Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, comment="Thứ tự của đoạn văn phục vụ việc tái cấu trúc ngữ cảnh")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="Nội dung chữ thô của đoạn")
     embedding: Mapped[list[float]] = mapped_column(JSONB, nullable=False)
+    chunk_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    token_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False)
 
@@ -58,4 +72,5 @@ class DocumentChunk(UUIDMixin, Base):
 
     __table_args__ = (
         Index("idx_chunks_document_id", "document_id"),
+        Index("idx_chunks_document_hash", "document_id", "chunk_hash", unique=True),
     )

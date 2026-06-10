@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .api_key import APIKey
     from .sdk_operation import SDKOperation
     from .task_artifact import TaskArtifact
+    from .project import Project
     from .user import User
 
 class SACTask(AIEntityMixin, Base):
@@ -24,6 +25,7 @@ class SACTask(AIEntityMixin, Base):
     __tablename__ = "sac_tasks"
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("user_api_keys.id", ondelete="SET NULL"), nullable=True, index=True)
     
     directive: Mapped[str] = mapped_column(Text, nullable=False, comment="Yêu cầu tìm kiếm gốc từ khách hàng")
@@ -42,6 +44,7 @@ class SACTask(AIEntityMixin, Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="tasks")
+    project: Mapped["Project"] = relationship("Project", back_populates="tasks")
     api_key: Mapped[Optional["APIKey"]] = relationship("APIKey", back_populates="tasks")
     operations: Mapped[List["SDKOperation"]] = relationship("SDKOperation", back_populates="task", cascade="all, delete-orphan", order_by="SDKOperation.turn_number")
     artifacts: Mapped[List["TaskArtifact"]] = relationship("TaskArtifact", back_populates="task", cascade="all, delete-orphan")
