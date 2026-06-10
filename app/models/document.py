@@ -6,7 +6,9 @@ from typing import Any, Optional, TYPE_CHECKING
 from sqlalchemy import ForeignKey, String, Text, Integer, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, AIEntityMixin, UUIDMixin
+from pgvector.sqlalchemy import Vector  
+
+from .base import Base, AIEntityMixin, UUIDMixin, TimestampMixin
 from app.shared.enums import DocumentStatus
 
 if TYPE_CHECKING:
@@ -52,7 +54,7 @@ class Document(AIEntityMixin, Base):
     )
 
 
-class DocumentChunk(UUIDMixin, Base):
+class DocumentChunk(UUIDMixin, TimestampMixin, Base):
     """
     Các đoạn văn nhỏ (Text Chunks) được cắt từ file lớn kèm Vector Embedding độc lập của dự án đó.
     """
@@ -61,7 +63,7 @@ class DocumentChunk(UUIDMixin, Base):
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, comment="Thứ tự của đoạn văn phục vụ việc tái cấu trúc ngữ cảnh")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="Nội dung chữ thô của đoạn")
-    embedding: Mapped[list[float]] = mapped_column(JSONB, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=False)
     chunk_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     token_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
     page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -73,4 +75,10 @@ class DocumentChunk(UUIDMixin, Base):
     __table_args__ = (
         Index("idx_chunks_document_id", "document_id"),
         Index("idx_chunks_document_hash", "document_id", "chunk_hash", unique=True),
+        Index(
+            "idx_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )

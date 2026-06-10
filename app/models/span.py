@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from decimal import Decimal
-from sqlalchemy import DECIMAL, ForeignKey, Integer, String
+from sqlalchemy import DECIMAL, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,11 +28,13 @@ class Span(AIEntityMixin, Base):
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[Decimal] = mapped_column(DECIMAL(10,6), default=0)
     
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="success")  # success | error
     
     input: Mapped[Optional[dict]] = mapped_column(JSONB)
     output: Mapped[Optional[dict]] = mapped_column(JSONB)
 
-    trace: Mapped["Trace"] = relationship("Trace")
+    trace: Mapped["Trace"] = relationship("Trace", back_populates="spans")
     parent: Mapped[Optional["Span"]] = relationship("Span", remote_side="Span.id")

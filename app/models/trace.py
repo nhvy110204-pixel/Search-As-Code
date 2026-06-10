@@ -9,6 +9,7 @@ from .base import AIEntityMixin, Base
 
 if TYPE_CHECKING:
     from .chat_session import ChatSession
+    from .span import Span
     from .sac_task import SACTask
     from .user import User
 
@@ -30,3 +31,4 @@ class Trace(AIEntityMixin, Base):
     user: Mapped["User"] = relationship("User")
     session: Mapped[Optional["ChatSession"]] = relationship("ChatSession")
     task: Mapped[Optional["SACTask"]] = relationship("SACTask")
+    spans: Mapped[list["Span"]] = relationship("Span", back_populates="trace", cascade="all, delete-orphan", order_by="Span.created_at")

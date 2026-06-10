@@ -5,6 +5,7 @@ from typing import Any, TYPE_CHECKING
 from sqlalchemy import ForeignKey, Text, String, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector  # type: ignore[import-not-found]
 from .base import Base, AIEntityMixin
 from app.shared.enums import MemoryType
 
@@ -23,14 +24,14 @@ class UserMemory(AIEntityMixin, Base):
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="Nội dung văn bản được ghi nhớ")
     
     # Lưu Vector Embedding 1536 chiều (Phù hợp text-embedding-3-small hoặc tương đương)
-    embedding: Mapped[list[float]] = mapped_column(JSONB, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=False)
 
     user: Mapped["User"] = relationship("User")
 
     __table_args__ = (
         Index(
             "idx_user_memories_embedding",
-            embedding,
+            "embedding",
             postgresql_using="hnsw",
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),

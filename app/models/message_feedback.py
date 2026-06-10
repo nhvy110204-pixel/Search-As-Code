@@ -8,6 +8,7 @@ from .base import Base, UUIDMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .chat_message import ChatMessage
+    from .user import User
 
 class MessageFeedback(UUIDMixin, TimestampMixin, Base):
     """
@@ -24,3 +25,4 @@ class MessageFeedback(UUIDMixin, TimestampMixin, Base):
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Ý kiến đóng góp bằng văn bản của khách hàng")
 
     message: Mapped["ChatMessage"] = relationship("ChatMessage", back_populates="feedback")
+    user: Mapped["User"] = relationship("User", back_populates="feedbacks")

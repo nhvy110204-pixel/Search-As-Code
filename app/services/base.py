@@ -1,51 +1,56 @@
-from typing import Generic, List, Optional, Type, TypeVar, Any
+from typing import Generic, List, Optional, TypeVar, Any, Dict
 from uuid import UUID
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-
-from app.repositories.base import BaseRepository
+from repositories.base import BaseRepository
 
 ModelType = TypeVar("ModelType")
-CreateSchemaType = TypeVar("CreateSchemaType")
-UpdateSchemaType = TypeVar("UpdateSchemaType")
-RepositoryType = TypeVar("RepositoryType", bound=BaseRepository)
+CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
+UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 
-class BaseService(
-    Generic[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
-):
+class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+    def __init__(self, repository: BaseRepository[ModelType, CreateSchemaType, UpdateSchemaType]):
+        self.repo = repository
 
-    def __init__(
-        self,
-        db: Session,
-        model: Type[ModelType],
-        repository_class: Type[RepositoryType],
-    ):
-        self.db = db
-        self.repository: RepositoryType = repository_class(model=model, db=db)
-
-    def get(self, id: UUID) -> Optional[ModelType]:
-        return self.repository.get(id)
+    def get(self, id: UUID, include_deleted: bool = False, options: List = None) -> Optional[ModelType]:
+        return self.repo.get(id=id, include_deleted=include_deleted, options=options)
 
     def get_multi(
         self,
         *,
         skip: int = 0,
         limit: int = 100,
-        filters: Optional[dict[str, Any]] = None,
-        order_by: Optional[list[str]] = None
+        filters: Optional[Dict] = None,
+        order_by: Optional[List[str]] = None,
+        options: Optional[List] = None,
+        include_deleted: bool = False,
     ) -> List[ModelType]:
-        return self.repository.get_multi(
-            skip=skip, limit=limit, filters=filters, order_by=order_by
+        return self.repo.get_multi(
+            skip=skip,
+            limit=limit,
+            filters=filters,
+            order_by=order_by,
+            options=options,
+            include_deleted=include_deleted,
         )
 
-    def create(self, *, payload: CreateSchemaType) -> ModelType:
-        return self.repository.create(obj_in=payload)
+    def create(self, obj_in: CreateSchemaType) -> ModelType:
+        return self.repo.create(obj_in)
 
-    def update(self, *, db_obj: ModelType, payload: UpdateSchemaType) -> ModelType:
-        return self.repository.update(db_obj=db_obj, obj_in=payload)
+    def update(self, id: UUID, obj_in: UpdateSchemaType | Dict[str, Any]) -> Optional[ModelType]:
+        db_obj = self.repo.get(id)
+        if not db_obj:
+            return None
+        return self.repo.update(db_obj, obj_in)
 
-    def delete(self, *, id: UUID) -> None:
-        self.repository.delete(id=id)
+    def delete(self, id: UUID, hard: bool = False) -> bool:
+        if hard:
+            return self.repo.hard_delete(id)
+        return self.repo.soft_delete(id)
 
-    def count(self, filters: Optional[dict] = None) -> int:
-        return self.repository.count(filters=filters)
+    def count(self, filters: Optional[Dict] = None, include_deleted: bool = False) -> int:
+        return self.repo.count(filters=filters, include_deleted=include_deleted)
+
+    def exists(self, filters: Dict[str, Any]) -> bool:
+        return self.repo.exists(filters=filters)

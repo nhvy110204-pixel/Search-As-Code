@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .chat_session import ChatSession
     from .document import Document
     from .project import Project
+    from .message_feedback import MessageFeedback
     from .session_input import SessionInput
     from .sac_task import SACTask
 
@@ -23,7 +24,8 @@ class User(AIEntityMixin, Base):
 
     api_keys: Mapped[List["APIKey"]] = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
     chat_sessions: Mapped[List["ChatSession"]] = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
-    tasks: Mapped[List["SACTask"]] = relationship("SACTask", back_populates="user")
+    tasks: Mapped[List["SACTask"]] = relationship("SACTask", back_populates="user", passive_deletes=True)
     documents: Mapped[List["Document"]] = relationship("Document", back_populates="user", cascade="all, delete-orphan")
     projects: Mapped[List["Project"]] = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
     session_inputs: Mapped[List["SessionInput"]] = relationship("SessionInput", back_populates="user", cascade="all, delete-orphan")
+    feedbacks: Mapped[List["MessageFeedback"]] = relationship("MessageFeedback", back_populates="user", cascade="all, delete-orphan")
