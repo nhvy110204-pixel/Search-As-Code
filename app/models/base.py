@@ -64,6 +64,13 @@ class MetadataMixin:
         nullable=False,
     )
 
+class AuditLogMixin(UUIDMixin):
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
 
 class AIEntityMixin(
     UUIDMixin,

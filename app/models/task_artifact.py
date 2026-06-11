@@ -5,12 +5,12 @@ from decimal import Decimal
 from typing import Optional, TYPE_CHECKING
 from sqlalchemy import ForeignKey, String, Integer, DECIMAL, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, UUIDMixin, TimestampMixin
+from .base import Base, AIEntityMixin
 
 if TYPE_CHECKING:
     from .sac_task import SACTask
 
-class TaskArtifact(UUIDMixin, TimestampMixin, Base):
+class TaskArtifact(AIEntityMixin, Base):
     """
     Registry Index: Sau khi Sandbox dọn dẹp (Cleanup), các file dữ liệu đầu ra cốt lõi (JSON, CSV, PDF)
     sẽ được đẩy ra Object Storage an toàn. Thực thể này quản lý metadata và điểm tin cậy (Confidence Score) của file đó.

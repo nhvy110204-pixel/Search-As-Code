@@ -7,12 +7,12 @@ from typing import Optional, Any, TYPE_CHECKING
 from sqlalchemy import ForeignKey, String, Integer, DateTime, DECIMAL, Index, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, UUIDMixin
+from .base import AuditLogMixin, Base
 
 if TYPE_CHECKING:
     from .sac_task import SACTask
 
-class SDKOperation(UUIDMixin, Base):
+class SDKOperation(AuditLogMixin, Base):
     """
     Append-Only Audit Log: Lưu vết toàn bộ lịch sử các thao tác hàm SDK mà Model tự viết mã thực thi trong Sandbox.
     """

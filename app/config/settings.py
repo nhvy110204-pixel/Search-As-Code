@@ -3,11 +3,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from pydantic import computed_field
+from pydantic import BaseSettings
 from sqlalchemy.engine import URL
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[2]
 APP_ENV = os.getenv("APP_ENV", "dev").lower()
 
 
@@ -52,28 +51,34 @@ class Settings(BaseSettings):
     # Prometheus multiprocess mode 
     PROMETHEUS_MULTIPROC_DIR: Optional[str] = None
 
-    @computed_field
+    # Embedding provider configuration
+    EMBEDDING_PROVIDER: str = "openai"
+    EMBEDDING_MODEL_NAME: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSION: int = 1536
+    OPENAI_API_KEY: Optional[str] = None
+
+    # Qdrant Vector DB
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: Optional[str] = None
+    QDRANT_COLLECTION_CHUNKS: str = "document_chunks"
+    QDRANT_COLLECTION_MEMORIES: str = "user_memories"
+
     @property
     def DATABASE_URL(self) -> str:
-        return str(
-            URL.create(
-                "postgresql+psycopg",
-                username=self.DB_USER,
-                password=self.DB_PASSWORD,
-                host=self.DB_HOST,
-                port=self.DB_PORT,
-                database=self.DB_NAME,
-                )
-            )
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.DB_USER,
+            password=self.DB_PASSWORD,
+            host=self.DB_HOST,
+            port=self.DB_PORT,
+            database=self.DB_NAME,
+        ).render_as_string(hide_password=False)
 
-    model_config = SettingsConfigDict(
-        env_file=str(
-            BASE_DIR / (".env.test" if APP_ENV == "test" else ".env")
-        ),
-        env_file_encoding="utf-8",
-        extra="ignore",
-        case_sensitive=True
-    )
+    class Config:
+        env_file = str(BASE_DIR / (".env.test" if APP_ENV == "test" else ".env"))
+        env_file_encoding = "utf-8"
+        extra = "ignore"
+        case_sensitive = True
 
 
 @lru_cache

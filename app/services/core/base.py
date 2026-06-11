@@ -1,8 +1,6 @@
 from typing import Generic, List, Optional, TypeVar, Any, Dict
 from uuid import UUID
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from repositories.base import BaseRepository
 
 ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -10,7 +8,7 @@ UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 
 class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    def __init__(self, repository: BaseRepository[ModelType, CreateSchemaType, UpdateSchemaType]):
+    def __init__(self, repository):
         self.repo = repository
 
     def get(self, id: UUID, include_deleted: bool = False, options: List = None) -> Optional[ModelType]:
