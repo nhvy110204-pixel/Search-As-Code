@@ -21,31 +21,23 @@ class UnitOfWork(AbstractContextManager):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        try:
-            if exc_type is None:
+            try:
+                if exc_type is not None:
+                    logger.debug("UnitOfWork exiting with exception; rolling back")
+                    self.db.rollback()
+                    return False 
+
                 if self.read_only:
                     logger.debug("UnitOfWork read-only: rolling back to discard changes")
-                    try:
-                        self.db.rollback()
-                    except Exception:
-                        logger.exception("Failed to rollback read-only UnitOfWork")
+                    self.db.rollback()
                 else:
                     logger.debug("UnitOfWork committing transaction")
-                    try:
-                        self.db.commit()
-                        self._committed = True
-                    except Exception:
-                        logger.exception("Commit failed in UnitOfWork; rolling back")
-                        self.db.rollback()
-                        raise
-            else:
-                logger.debug("UnitOfWork exiting with exception; rolling back")
-                try:
-                    self.db.rollback()
-                except Exception:
-                    logger.exception("Failed to rollback UnitOfWork after exception")
-        finally:
-            return False
+                    self.db.commit()
+                    self._committed = True
+            except Exception:
+                logger.exception("Error occurred during UnitOfWork exit processing")
+                self.db.rollback()
+                raise
 
     def commit(self):
         logger.debug("UnitOfWork explicit commit")
