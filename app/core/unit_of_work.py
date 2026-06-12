@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 import logging
 
 from app.repositories.user import UserRepository
+from app.repositories.project import ProjectRepository
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class UnitOfWork(AbstractContextManager):
         self._committed = False
         # add repositories
         self.users = UserRepository(self.db)
+        self.projects = ProjectRepository(self.db)
 
     def __enter__(self):
         logger.debug("Entering UnitOfWork (read_only=%s)", self.read_only)
