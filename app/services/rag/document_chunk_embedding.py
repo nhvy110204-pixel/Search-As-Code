@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 import tiktoken
 
 from sqlalchemy.orm import Session
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue, PointIdsList
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 
 from app.models.document import DocumentChunk
 from app.schemas.dto.chunk_embedding import (

@@ -17,7 +17,9 @@ if TYPE_CHECKING:
 class User(AIEntityMixin, Base):
     """Quản lý thông tin tài khoản người dùng chính trong hệ thống."""
     __tablename__ = "users"
-
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    full_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)

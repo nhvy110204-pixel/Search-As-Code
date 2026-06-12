@@ -6,7 +6,7 @@ from sqlalchemy import and_, delete, select, func, asc, desc, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
-from models.base import Base, SoftDeleteMixin
+from app.models.base import Base, SoftDeleteMixin
 
 ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -126,9 +126,14 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return self.db.execute(query).scalars().first()
 
     #  WRITE OPERATIONS (Chuẩn ACID) 
+    def _obj_to_dict(self, obj_in: CreateSchemaType | UpdateSchemaType) -> Dict[str, Any]:
+        if hasattr(obj_in, "model_dump"):
+            return obj_in.model_dump(exclude_unset=True)
+        return obj_in.dict(exclude_unset=True)
+
     def create(self, obj_in: CreateSchemaType) -> ModelType:
         """Tạo mới object - Chỉ flush để sinh ID, tuyệt đối không commit tại đây"""
-        db_obj = self.model(**obj_in.model_dump(exclude_unset=True))
+        db_obj = self.model(**self._obj_to_dict(obj_in))
         self.db.add(db_obj)
         self.db.flush()  # Đẩy xuống DB tạm thời
         self.db.refresh(db_obj)
@@ -139,7 +144,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
-            update_data = obj_in.model_dump(exclude_unset=True)
+            update_data = self._obj_to_dict(obj_in)
 
         for field, value in update_data.items():
             if hasattr(db_obj, field):

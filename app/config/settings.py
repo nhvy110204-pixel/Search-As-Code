@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseSettings
+from pydantic import ConfigDict
+from pydantic_settings import BaseSettings
 from sqlalchemy.engine import URL
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -74,11 +75,12 @@ class Settings(BaseSettings):
             database=self.DB_NAME,
         ).render_as_string(hide_password=False)
 
-    class Config:
-        env_file = str(BASE_DIR / (".env.test" if APP_ENV == "test" else ".env"))
-        env_file_encoding = "utf-8"
-        extra = "ignore"
-        case_sensitive = True
+    model_config = ConfigDict(
+        env_file=str(BASE_DIR / (".env.test" if APP_ENV == "test" else ".env")),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=True,
+    )
 
 
 @lru_cache

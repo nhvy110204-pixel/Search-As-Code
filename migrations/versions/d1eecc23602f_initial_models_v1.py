@@ -21,6 +21,9 @@ def upgrade():
 
     op.create_table('users',
         sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('username', sa.String(50), nullable=False),
+        sa.Column('full_name', sa.String(100), nullable=True),
+        sa.Column('avatar_url', sa.String(500), nullable=True),
         sa.Column('email', sa.String(255), nullable=False),
         sa.Column('hashed_password', sa.String(255), nullable=False),
         sa.Column('is_active', sa.Boolean(), server_default=sa.text('true'), nullable=False),
@@ -30,8 +33,11 @@ def upgrade():
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('metadata_', postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
         sa.PrimaryKeyConstraint('id', name=op.f('pk_users')),
-        sa.UniqueConstraint('email', name=op.f('uq_users_email'))
+        sa.UniqueConstraint('email', name=op.f('uq_users_email')),
+        sa.UniqueConstraint('username', name=op.f('uq_users_username'))
     )
+
+    op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
     op.create_index(op.f('ix_users_created_at'), 'users', ['created_at'])
 
