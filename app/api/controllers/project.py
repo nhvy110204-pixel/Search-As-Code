@@ -1,79 +1,118 @@
 import uuid
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 
+from app.api.dependencies.auth import get_current_user
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
-from app.schemas.dto.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse
+from app.models.user import User
+from app.schemas.dto.project import (
+    ProjectCreate,
+    ProjectCreateRequest,
+    ProjectListResponse,
+    ProjectResponse,
+    ProjectUpdate,
+)
 from app.services.core.project import ProjectService
 from app.shared.enums import ProjectStatus
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
+
 def get_project_service(db=Depends(get_db)):
     with UnitOfWork(db) as uow:
         yield ProjectService(repository=uow.projects)
 
+
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-def create_project(payload: ProjectCreate, service: ProjectService = Depends(get_project_service)):
+def create_project(
+    payload: ProjectCreateRequest,
+    current_user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
     try:
-        return service.create(payload)
+        create_payload = ProjectCreate(
+            owner_user_id=current_user.id,
+            name=payload.name,
+            description=payload.description,
+            status=payload.status,
+            settings=payload.settings,
+        )
+        return service.create(create_payload)
     except IntegrityError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project creation failed",
         )
 
+
 @router.get("/{project_id}", response_model=ProjectResponse)
-def get_project(project_id: uuid.UUID, service: ProjectService = Depends(get_project_service)):
+def get_project(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
     project = service.get(id=project_id)
     if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if project.owner_user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project does not belong to user")
     return project
+
 
 @router.get("/", response_model=ProjectListResponse)
 def list_projects(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    owner_user_id: Optional[uuid.UUID] = Query(None),
-    status: Optional[ProjectStatus] = Query(None),
+    status_filter: Optional[ProjectStatus] = Query(None, alias="status"),
     name: Optional[str] = Query(None),
-    service: ProjectService = Depends(get_project_service)
+    current_user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
 ):
-    filters = {}
-    if owner_user_id:
-        filters["owner_user_id"] = owner_user_id
-    if status:
-        filters["status"] = status
+    filters = {"owner_user_id": current_user.id}
+    if status_filter:
+        filters["status"] = status_filter
     if name:
         filters["name"] = name
-        
+
     return service.get_projects_paginated(page=page, page_size=page_size, filters=filters)
+
 
 @router.put("/{project_id}", response_model=ProjectResponse)
 def update_project(
     project_id: uuid.UUID,
     payload: ProjectUpdate,
-    service: ProjectService = Depends(get_project_service)
+    current_user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
 ):
+    existing = service.get(id=project_id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if existing.owner_user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project does not belong to user")
+
     project = service.update(id=project_id, obj_in=payload)
     if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return project
+
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(
     project_id: uuid.UUID,
-    hard: bool = Query(False, description="True để xóa cứng khỏi DB, False để soft delete"),
-    service: ProjectService = Depends(get_project_service)
+    hard: bool = Query(False, description="True to hard delete, false to soft delete"),
+    current_user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
 ):
+    existing = service.get(id=project_id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if existing.owner_user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project does not belong to user")
+
     success = service.delete(id=project_id, hard=hard)
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return None

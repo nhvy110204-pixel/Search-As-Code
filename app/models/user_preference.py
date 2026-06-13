@@ -5,12 +5,12 @@ from typing import Any, TYPE_CHECKING
 from sqlalchemy import ForeignKey, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, UUIDMixin, TimestampMixin
+from .base import Base, AIEntityMixin
 
 if TYPE_CHECKING:
     from .user import User
 
-class UserPreference(UUIDMixin, TimestampMixin, Base):
+class UserPreference(AIEntityMixin, Base):
     """
     Explicit Long-term Memory: Lưu trữ các cấu hình, sở thích cứng, tường minh của User.
     Giúp AI cá nhân hóa câu trả lời (UI Theme, Default LLM Model, Custom System Prompt...).

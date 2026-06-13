@@ -36,8 +36,12 @@ class UserUpdate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    identifier: str = Field(min_length=3, max_length=255, description="Email or username")
     password: str
+
+
+class TokenRefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=16)
 
 
 class UserChangePassword(BaseModel):
@@ -76,6 +80,15 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in_seconds: int
+    refresh_expires_in_seconds: int
+    user: UserResponse
 
 
 class UserListResponse(BaseModel):

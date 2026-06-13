@@ -54,6 +54,25 @@ SAC_SDK_CALLS_TOTAL = Counter(
     ["operation"],
 )
 
+CHAT_STREAMS_TOTAL = Counter(
+    "chat_streams_total",
+    "Total chat streams by end-status",
+    ["status"],
+)
+
+CHAT_STREAM_DURATION_SECONDS = Histogram(
+    "chat_stream_duration_seconds",
+    "Chat stream duration in seconds",
+    ["status"],
+    buckets=AI_LATENCY_BUCKETS,
+)
+
+CHAT_STREAM_TIME_TO_FIRST_DELTA_SECONDS = Histogram(
+    "chat_stream_time_to_first_delta_seconds",
+    "Seconds until the first chat stream delta is emitted",
+    buckets=AI_LATENCY_BUCKETS,
+)
+
 
 class ASGIMetricsMiddleware:
     """Pure ASGI Middleware: Đảm bảo luồng Stream Token,
@@ -138,3 +157,24 @@ def record_sac_task_status(status: str):
 
 def record_sac_sdk_call(operation: str):
     SAC_SDK_CALLS_TOTAL.labels(operation=operation).inc()
+
+
+def record_chat_stream_started():
+    CHAT_STREAMS_TOTAL.labels(status="started").inc()
+
+
+def record_chat_stream_completed(duration_seconds: float, time_to_first_delta_seconds: float | None):
+    CHAT_STREAMS_TOTAL.labels(status="completed").inc()
+    CHAT_STREAM_DURATION_SECONDS.labels(status="completed").observe(duration_seconds)
+    if time_to_first_delta_seconds is not None:
+        CHAT_STREAM_TIME_TO_FIRST_DELTA_SECONDS.observe(time_to_first_delta_seconds)
+
+
+def record_chat_stream_failed(duration_seconds: float):
+    CHAT_STREAMS_TOTAL.labels(status="failed").inc()
+    CHAT_STREAM_DURATION_SECONDS.labels(status="failed").observe(duration_seconds)
+
+
+def record_chat_stream_disconnected(duration_seconds: float):
+    CHAT_STREAMS_TOTAL.labels(status="disconnected").inc()
+    CHAT_STREAM_DURATION_SECONDS.labels(status="disconnected").observe(duration_seconds)

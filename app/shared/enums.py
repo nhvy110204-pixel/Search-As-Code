@@ -12,6 +12,13 @@ class MessageStatus(str, enum.Enum):
     COMPLETED = "completed"  # Đã hoàn thành sinh tin nhắn trọn vẹn
     FAILED = "failed"        # Lỗi kết nối/OOM giữa chừng (Tin nhắn lỗi sẽ báo đỏ trên giao diện)
 
+class ChatStreamStatus(str, enum.Enum):
+    STARTED = "started"
+    STREAMING = "streaming"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    DISCONNECTED = "disconnected"
+
 class DocumentStatus(str, enum.Enum):
     PENDING = "pending"          # Chờ xử lý parse văn bản
     PROCESSING = "processing"    # Đang cắt nhỏ (Chunking) và sinh Embedding

@@ -32,10 +32,11 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
         )
         return self.repo.create_user(internal)
 
-    def authenticate(self, email: str, password: str) -> Optional[User]:
-        """Authenticate user by email and password."""
-        user = self.repo.get_by(email=email)
-        if user and verify_password(password, user.hashed_password):
+    def authenticate(self, identifier: str, password: str) -> Optional[User]:
+        """Authenticate user by email or username."""
+        normalized = identifier.strip()
+        user = self.repo.get_by_email(normalized.lower()) if "@" in normalized else self.repo.get_by_username(normalized)
+        if user and not user.is_deleted and user.is_active and verify_password(password, user.hashed_password):
             return user
         return None
 

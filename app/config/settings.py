@@ -58,6 +58,18 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 1536
     OPENAI_API_KEY: Optional[str] = None
 
+    # Chat streaming
+    CHAT_MODEL_NAME: str = "gpt-4o-mini"
+    CHAT_MAX_INPUT_CHARS: int = 12000
+    CHAT_HISTORY_LIMIT: int = 30
+    CHAT_HISTORY_MAX_CHARS: int = 50000
+    CHAT_STREAM_PING_SECONDS: int = 15
+    CHAT_STREAM_SEND_TIMEOUT_SECONDS: int = 15
+    CHAT_PROVIDER_CHUNK_TIMEOUT_SECONDS: int = 20
+    CHAT_STREAM_RATE_LIMIT_PER_MINUTE: int = 20
+    CHAT_STREAM_CONCURRENT_LIMIT: int = 3
+    CHAT_STREAM_DAILY_LIMIT: int = 500
+
     # Qdrant Vector DB
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: Optional[str] = None

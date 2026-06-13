@@ -13,6 +13,10 @@ class ProjectBase(BaseModel):
 class ProjectCreate(ProjectBase):
     owner_user_id: uuid.UUID = Field(..., description="ID của user sở hữu project")
 
+class ProjectCreateRequest(ProjectBase):
+    pass
+
+
 class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = None

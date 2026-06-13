@@ -4,13 +4,13 @@ import uuid
 from typing import Optional, TYPE_CHECKING
 from sqlalchemy import ForeignKey, String, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base, UUIDMixin, TimestampMixin
+from .base import Base, AIEntityMixin
 
 if TYPE_CHECKING:
     from .chat_message import ChatMessage
     from .user import User
 
-class MessageFeedback(UUIDMixin, TimestampMixin, Base):
+class MessageFeedback(AIEntityMixin, Base):
     """
     Hệ thống thu thập dữ liệu phản hồi người dùng (RLHF Data Loop).
     Kho lưu trữ quý giá để đội phát triển AI lấy ra tinh chỉnh Prompt / Fine-tune Model.
