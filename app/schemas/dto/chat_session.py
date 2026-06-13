@@ -9,7 +9,6 @@ class ChatSessionBase(BaseModel):
 
 
 class ChatSessionCreate(ChatSessionBase):
-    user_id: uuid.UUID = Field(..., description="ID của user")
     project_id: uuid.UUID = Field(..., description="ID của project")
 
 

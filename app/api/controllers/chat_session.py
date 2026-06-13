@@ -3,8 +3,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 
+from app.api.dependencies.auth import get_current_user
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
+from app.models.user import User
 from app.schemas.dto.chat_session import ChatSessionCreate, ChatSessionUpdate, ChatSessionResponse, ChatSessionListResponse
 from app.services.core.chat_session import ChatSessionService
 
@@ -15,16 +17,21 @@ def get_chat_session_service(db=Depends(get_db)):
     with UnitOfWork(db) as uow:
         yield ChatSessionService(repository=uow.chat_sessions)
 
-
 @router.post("/", response_model=ChatSessionResponse, status_code=status.HTTP_201_CREATED)
-def create_chat_session(payload: ChatSessionCreate, service: ChatSessionService = Depends(get_chat_session_service)):
+def create_chat_session(
+    payload: ChatSessionCreate,
+    current_user: User = Depends(get_current_user),
+    service: ChatSessionService = Depends(get_chat_session_service)
+):
     try:
-        return service.create(payload)
-    except IntegrityError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Chat session creation failed"
+        payload_with_user = ChatSessionCreate(
+            user_id=current_user.id,
+            project_id=payload.project_id,
+            title=payload.title,
         )
+        return service.create(payload_with_user)
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Chat session creation failed")
 
 
 @router.get("/{session_id}", response_model=ChatSessionResponse)
