@@ -32,6 +32,7 @@ class Document(AIEntityMixin, Base):
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[DocumentStatus] = mapped_column(String(20), default=DocumentStatus.PENDING, server_default=text("'pending'"), nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    blake3_hash: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="Mã băm MD5 của file gốc để tránh xử lý trùng lặp")
 
     processing_metadata: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
@@ -50,6 +51,7 @@ class Document(AIEntityMixin, Base):
     __table_args__ = (
         Index("idx_documents_project_status", "project_id", "status"),
         Index("idx_documents_user_status", "user_id", "status"),
+        Index("idx_documents_project_hash", "project_id", "blake3_hash"),
     )
 
 

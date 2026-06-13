@@ -4,6 +4,10 @@ import logging
 
 from app.repositories.user import UserRepository
 from app.repositories.project import ProjectRepository
+from app.repositories.document import DocumentRepository
+from app.repositories.document_chunk import DocumentChunkRepository
+from app.repositories.chat_session import ChatSessionRepository
+from app.repositories.chat_message import ChatMessageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +21,10 @@ class UnitOfWork(AbstractContextManager):
         # add repositories
         self.users = UserRepository(self.db)
         self.projects = ProjectRepository(self.db)
+        self.documents = DocumentRepository(self.db)
+        self.document_chunks = DocumentChunkRepository(self.db)
+        self.chat_sessions = ChatSessionRepository(self.db)
+        self.chat_messages = ChatMessageRepository(self.db)
 
     def __enter__(self):
         logger.debug("Entering UnitOfWork (read_only=%s)", self.read_only)

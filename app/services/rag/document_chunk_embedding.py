@@ -5,26 +5,28 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 import tiktoken
 
-from sqlalchemy.orm import Session
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 
 from app.models.document import DocumentChunk
-from app.schemas.dto.chunk_embedding import (
-    ChunkEmbeddingCreateDTO,
-    ChunkEmbeddingResponseDTO,
+from app.schemas.dto.document_chunk import (
+    DocumentChunkCreate,
+    DocumentChunkUpdate,
 )
-from app.repositories.document_chunk import DocumentChunkRepository
-from app.services.core.base import BaseService
+from app.services.core.document_chunk import DocumentChunkService
 from app.rag.embeddings.service import EmbeddingService
 from app.core.qdrant import qdrant_manager
 from app.config.settings import settings
 from app.core.logger import service_boundary 
 
 
-class DocumentChunkEmbeddingService(BaseService[DocumentChunk, ChunkEmbeddingCreateDTO, ChunkEmbeddingCreateDTO]):
+class DocumentChunkEmbeddingService:
+    """
+    Specialized service for DocumentChunk operations with Qdrant embedding sync.
+    Wraps DocumentChunkService with embedding-aware business logic.
+    """
     
-    def __init__(self, db: Session):
-        super().__init__(DocumentChunkRepository(db))
+    def __init__(self, chunk_service: DocumentChunkService):
+        self.chunk_service = chunk_service
         self.embedding_service = EmbeddingService()
         self.qdrant = qdrant_manager
         
@@ -65,7 +67,8 @@ class DocumentChunkEmbeddingService(BaseService[DocumentChunk, ChunkEmbeddingCre
             },
         )
         
-        return self.repo.create_with_embedding_id(
+        # Create chunk using service.create() with proper DTO
+        chunk_create = DocumentChunkCreate(
             document_id=document_id,
             chunk_index=chunk_index,
             content=content,
@@ -75,6 +78,7 @@ class DocumentChunkEmbeddingService(BaseService[DocumentChunk, ChunkEmbeddingCre
             page_number=page_number,
             meta_data=meta_data or {},
         )
+        return self.chunk_service.create(chunk_create)
 
     @service_boundary("Search Chunks by Similarity")
     async def search_chunks_by_similarity_async(
@@ -83,8 +87,8 @@ class DocumentChunkEmbeddingService(BaseService[DocumentChunk, ChunkEmbeddingCre
         document_id: Optional[UUID] = None,
         limit: int = 10,
         score_threshold: float = 0.5,
-    ) -> List[ChunkEmbeddingResponseDTO]:
-        
+    ) -> List[DocumentChunk]:
+        """Search chunks by vector similarity and return full DocumentChunk objects."""
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
             
@@ -100,34 +104,21 @@ class DocumentChunkEmbeddingService(BaseService[DocumentChunk, ChunkEmbeddingCre
             return []
             
         embedding_ids = [res["embedding_id"] for res in results]
-        scores_map = {res["embedding_id"]: res["score"] for res in results}
         
         filters = {"embedding_id__in": embedding_ids}
         if document_id:
             filters["document_id"] = document_id
             
-        db_chunks = self.repo.get_multi(filters=filters, limit=len(embedding_ids))
+        db_chunks = self.chunk_service.repo.get_multi(filters=filters, limit=len(embedding_ids))
+        # Return in Qdrant search order
         chunks_dict = {chunk.embedding_id: chunk for chunk in db_chunks}
         
-        response_dtos = []
-        for emb_id in embedding_ids:
-            db_chunk = chunks_dict.get(emb_id)
-            if db_chunk:
-                response_dtos.append(ChunkEmbeddingResponseDTO(
-                    chunk_id=db_chunk.id,
-                    embedding_id=emb_id,
-                    score=scores_map[emb_id],
-                    content=db_chunk.content,
-                    document_id=db_chunk.document_id,
-                    chunk_index=db_chunk.chunk_index,
-                    page_number=db_chunk.page_number,
-                    meta_data=db_chunk.meta_data,
-                ))
-        return response_dtos
+        return [chunks_dict[emb_id] for emb_id in embedding_ids if emb_id in chunks_dict]
 
     @service_boundary("Delete Single Chunk Embedding")
     def delete_chunk_embedding(self, chunk_id: UUID, hard: bool = True) -> bool:
-        db_chunk = self.get(chunk_id)
+        """Delete chunk and its Qdrant embedding."""
+        db_chunk = self.chunk_service.get(chunk_id)
         if not db_chunk:
             raise ValueError(f"Chunk {chunk_id} not found")
             
@@ -135,10 +126,11 @@ class DocumentChunkEmbeddingService(BaseService[DocumentChunk, ChunkEmbeddingCre
             collection_name=settings.QDRANT_COLLECTION_CHUNKS,
             embedding_id=db_chunk.embedding_id,
         )
-        return self.delete(chunk_id, hard=hard)
+        return self.chunk_service.delete(chunk_id, hard=hard)
 
     @service_boundary("Bulk Delete Document Embeddings")
     def delete_document_embeddings(self, document_id: UUID, hard: bool = True) -> int:
+        """Delete all chunks of document and their Qdrant embeddings."""
         qdrant_filter = Filter(
             must=[FieldCondition(key="document_id", match=MatchValue(value=str(document_id)))]
         )
@@ -146,22 +138,26 @@ class DocumentChunkEmbeddingService(BaseService[DocumentChunk, ChunkEmbeddingCre
             collection_name=settings.QDRANT_COLLECTION_CHUNKS,
             filter_condition=qdrant_filter,
         )
-        return self.repo.delete_by_document(document_id, hard=hard)
+        return self.chunk_service.delete_by_document(document_id, hard=hard)
 
     @service_boundary("Re-embed Single Chunk")
     async def reembed_chunk_async(self, chunk_id: UUID) -> Optional[DocumentChunk]:
-        db_chunk = self.get(chunk_id)
+        """Re-embed a chunk with new embedding."""
+        db_chunk = self.chunk_service.get(chunk_id)
         if not db_chunk:
             raise ValueError(f"Chunk {chunk_id} not found")
             
+        # Delete old embedding from Qdrant
         self.qdrant.delete_vector(
             collection_name=settings.QDRANT_COLLECTION_CHUNKS,
             embedding_id=db_chunk.embedding_id,
         )
         
+        # Create new embedding
         new_vector = await self.embedding_service.embed_text_async(db_chunk.content)
         new_embedding_id = uuid4()
         
+        # Upsert to Qdrant
         self.qdrant.upsert_vector(
             collection_name=settings.QDRANT_COLLECTION_CHUNKS,
             embedding_id=new_embedding_id,
@@ -174,4 +170,6 @@ class DocumentChunkEmbeddingService(BaseService[DocumentChunk, ChunkEmbeddingCre
                 **db_chunk.meta_data,
             },
         )
-        return self.repo.update_embedding_id(chunk_id, new_embedding_id)
+
+        update_dto = DocumentChunkUpdate(embedding_id=new_embedding_id)
+        return self.chunk_service.update(chunk_id, update_dto)

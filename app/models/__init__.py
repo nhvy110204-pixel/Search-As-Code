@@ -12,6 +12,7 @@ from .message_feedback import MessageFeedback
 from .sac_task import SACTask, TaskStatus
 from .sdk_operation import SDKOperation
 from .task_artifact import TaskArtifact
+from .ingestion_task import IngestionTask
 
 __all__ = [
     "Base",
@@ -34,4 +35,5 @@ __all__ = [
     "TaskStatus",
     "SDKOperation",
     "TaskArtifact",
+    "IngestionTask",
 ]

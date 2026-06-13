@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
-from app.services.core.user_service import UserService
+from app.services.core.user import UserService
 from app.schemas.dto.user import UserCreate, UserResponse, UserListResponse, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])

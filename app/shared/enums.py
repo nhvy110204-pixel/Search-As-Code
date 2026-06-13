@@ -25,6 +25,17 @@ class TaskStatus(str, enum.Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+class IngestionTaskStatus(str, enum.Enum):
+    PENDING = "pending"
+    CHECKING_CACHE = "checking_cache"
+    PARSING = "parsing"            # Phase 1: Converting to MD via Docling
+    SUMMARIZING = "summarizing"    # Phase 2: Generating Global Summary via LLM
+    CHUNKING = "chunking"          # Phase 3: Structural splitting
+    ENRICHING = "enriching"        # Phase 4: Anthropic Context Injection
+    EMBEDDING = "embedding"        # Phase 5: Generating Dense + Sparse vectors
+    SAVING = "saving"              # Flushing records to DB & Qdrant
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 class ProjectStatus(str, enum.Enum):
     ACTIVE = "active"

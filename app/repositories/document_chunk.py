@@ -1,11 +1,11 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import Session
 
 from app.models.document import DocumentChunk
-from app.schemas.dto.chunk_embedding import ChunkEmbeddingCreateDTO
+from app.schemas.dto.document_chunk import DocumentChunkCreate, DocumentChunkUpdate, DocumentChunkListResponse, DocumentChunkResponse
 
 from .base import BaseRepository
 
@@ -13,42 +13,13 @@ from .base import BaseRepository
 class DocumentChunkRepository(
     BaseRepository[
         DocumentChunk,
-        ChunkEmbeddingCreateDTO,
-        ChunkEmbeddingCreateDTO,
+        DocumentChunkCreate,
+        DocumentChunkUpdate,
     ]
 ):
 
     def __init__(self, db: Session):
         super().__init__(DocumentChunk, db)
-
-    def create_with_embedding_id(
-        self,
-        document_id: UUID,
-        chunk_index: int,
-        content: str,
-        embedding_id: UUID,
-        chunk_hash: str,
-        token_count: int = 0,
-        page_number: Optional[int] = None,
-        meta_data: Optional[dict] = None,
-    ) -> DocumentChunk:
-
-        chunk = DocumentChunk(
-            document_id=document_id,
-            chunk_index=chunk_index,
-            content=content,
-            embedding_id=embedding_id,
-            chunk_hash=chunk_hash,
-            token_count=token_count,
-            page_number=page_number,
-            meta_data=meta_data or {},
-        )
-
-        self.db.add(chunk)
-        self.db.flush()
-        self.db.refresh(chunk)
-
-        return chunk
 
     def get_by_embedding_id(
         self,
@@ -91,24 +62,6 @@ class DocumentChunkRepository(
             }
         )
 
-    def update_embedding_id(
-        self,
-        chunk_id: UUID,
-        embedding_id: UUID,
-    ) -> Optional[DocumentChunk]:
-
-        chunk = self.get(chunk_id)
-
-        if chunk is None:
-            return None
-
-        chunk.embedding_id = embedding_id
-
-        self.db.flush()
-        self.db.refresh(chunk)
-
-        return chunk
-
     def delete_by_document(
         self,
         document_id: UUID,
@@ -138,3 +91,32 @@ class DocumentChunkRepository(
         self.db.flush()
 
         return result.rowcount or 0
+
+    def list_document_chunks(
+        self,
+        page: int = 1,
+        page_size: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> DocumentChunkListResponse:
+        """Phân trang document chunks."""
+        query = select(DocumentChunk)
+
+        if filters:
+            if "document_id" in filters and filters["document_id"] is not None:
+                query = query.filter(DocumentChunk.document_id == filters["document_id"])
+
+        count_query = select(func.count()).select_from(query.subquery())
+        total = self.db.execute(count_query).scalar() or 0
+
+        query = query.order_by(DocumentChunk.chunk_index.asc())
+        query = query.offset((page - 1) * page_size).limit(page_size)
+        results = self.db.execute(query).scalars().all()
+
+        chunk_responses = [DocumentChunkResponse.model_validate(c) for c in results]
+
+        return DocumentChunkListResponse(
+            items=chunk_responses,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
