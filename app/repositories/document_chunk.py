@@ -5,7 +5,7 @@ from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import Session
 
 from app.models.document import DocumentChunk
-from app.schemas.dto.document_chunk import DocumentChunkCreate, DocumentChunkUpdate, DocumentChunkListResponse, DocumentChunkResponse
+from app.schemas.dto.document_chunk import DocumentChunkCreate, DocumentChunkUpdate
 
 from .base import BaseRepository
 
@@ -97,8 +97,8 @@ class DocumentChunkRepository(
         page: int = 1,
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
-    ) -> DocumentChunkListResponse:
-        """Phân trang document chunks."""
+    ) -> tuple[list[DocumentChunk], int]:
+        """Paginate document chunks. Returns (chunks, total)."""
         query = select(DocumentChunk)
 
         if filters:
@@ -112,11 +112,4 @@ class DocumentChunkRepository(
         query = query.offset((page - 1) * page_size).limit(page_size)
         results = self.db.execute(query).scalars().all()
 
-        chunk_responses = [DocumentChunkResponse.model_validate(c) for c in results]
-
-        return DocumentChunkListResponse(
-            items=chunk_responses,
-            total=total,
-            page=page,
-            page_size=page_size
-        )
+        return list(results), total

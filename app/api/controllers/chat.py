@@ -22,17 +22,25 @@ def get_chat_completion_provider() -> ChatCompletionProvider:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
 
+def get_chat_stream_service(
+    db: Session = Depends(get_db),
+    provider: ChatCompletionProvider = Depends(get_chat_completion_provider),
+) -> ChatStreamService:
+    return ChatStreamService(
+        db=db,
+        provider=provider,
+        session_factory=SessionLocal,
+    )
+
+
 @router.post("/stream")
 async def stream_chat(
     payload: ChatStreamRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    provider: ChatCompletionProvider = Depends(get_chat_completion_provider),
+    service: ChatStreamService = Depends(get_chat_stream_service),
 ):
-    service = ChatStreamService(db=db, provider=provider, session_factory=SessionLocal)
     prepared = service.prepare_stream(payload, current_user)
-    db.close()
 
     return EventSourceResponse(
         service.stream_events(prepared, request.is_disconnected),

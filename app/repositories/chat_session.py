@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.chat_session import ChatSession
 from app.repositories.base import BaseRepository
-from app.schemas.dto.chat_session import ChatSessionCreate, ChatSessionListResponse, ChatSessionResponse, ChatSessionUpdate
+from app.schemas.dto.chat_session import ChatSessionCreate, ChatSessionUpdate
 
 
 class ChatSessionRepository(BaseRepository[ChatSession, ChatSessionCreate, ChatSessionUpdate]):
@@ -20,8 +20,8 @@ class ChatSessionRepository(BaseRepository[ChatSession, ChatSessionCreate, ChatS
         page: int = 1,
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
-    ) -> ChatSessionListResponse:
-        """Phân trang chat sessions."""
+    ) -> tuple[list[ChatSession], int]:
+        """Paginate chat sessions. Returns (sessions, total)."""
         query = select(ChatSession)
 
         if filters:
@@ -37,14 +37,7 @@ class ChatSessionRepository(BaseRepository[ChatSession, ChatSessionCreate, ChatS
         query = query.offset((page - 1) * page_size).limit(page_size)
         results = self.db.execute(query).scalars().all()
 
-        session_responses = [ChatSessionResponse.model_validate(s) for s in results]
-
-        return ChatSessionListResponse(
-            items=session_responses,
-            total=total,
-            page=page,
-            page_size=page_size
-        )
+        return list(results), total
 
     def get_by_project(self, project_id: uuid.UUID, skip: int = 0, limit: int = 100) -> list[ChatSession]:
         """Lấy danh sách chat sessions theo project."""

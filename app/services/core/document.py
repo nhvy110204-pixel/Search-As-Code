@@ -17,7 +17,15 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
     ) -> DocumentListResponse:
-        return self.doc_repo.list_documents(page=page, page_size=page_size, filters=filters)
+        from app.schemas.dto.document import DocumentResponse
+        documents, total = self.doc_repo.list_documents(page=page, page_size=page_size, filters=filters)
+        document_responses = [DocumentResponse.model_validate(d) for d in documents]
+        return DocumentListResponse(
+            items=document_responses,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
 
     def get_by_project(self, project_id: uuid.UUID, skip: int = 0, limit: int = 100) -> list[Document]:
         return self.doc_repo.get_by_project(project_id, skip=skip, limit=limit)

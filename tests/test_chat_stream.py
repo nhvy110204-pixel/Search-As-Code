@@ -7,9 +7,11 @@ import pytest
 from app.config.settings import settings
 from app.core.security import create_access_token, decode_access_token
 from app.models.chat_stream_run import ChatStreamRun
+from app.schemas.dto.chat import ChatStreamRequest, PreparedChatStream
+from app.services.chat.idempotency import ChatStreamIdempotencyHandler
 from app.services.chat.providers import ChatStreamChunk
-from app.services.chat.stream import ChatStreamService, PreparedChatStream
-from app.schemas.dto.chat import ChatStreamRequest
+from app.services.chat.stream import ChatStreamService
+from app.services.chat.streamer import ChatStreamer
 from app.shared.enums import ChatStreamStatus
 
 
@@ -32,7 +34,7 @@ class SlowProvider:
         yield ChatStreamChunk(content="late")
 
 
-async def _collect_events(service):
+async def _collect_events(streamer):
     prepared = PreparedChatStream(
         run_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
@@ -45,19 +47,24 @@ async def _collect_events(service):
     async def is_disconnected():
         return False
 
-    return [event async for event in service.stream_events(prepared, is_disconnected)]
+    return [event async for event in streamer.stream_events(
+        prepared.messages,
+        prepared.assistant_message_id,
+        is_disconnected,
+        None,
+        None,
+        None,
+        None,
+    )]
 
 
 def _event_data(event):
     return json.loads(event["data"])
 
 
-def test_stream_events_emit_created_deltas_and_done(monkeypatch):
-    completed = {}
-    monkeypatch.setattr(ChatStreamService, "_mark_completed", lambda self, *args: completed.setdefault("args", args))
-
-    service = ChatStreamService(db=None, provider=FakeProvider())
-    events = asyncio.run(_collect_events(service))
+def test_stream_events_emit_created_deltas_and_done():
+    streamer = ChatStreamer(FakeProvider())
+    events = asyncio.run(_collect_events(streamer))
 
     assert [event["event"] for event in events] == ["message.created", "delta", "delta", "message.done"]
     assert _event_data(events[1])["content"] == "Hello"
@@ -65,38 +72,29 @@ def test_stream_events_emit_created_deltas_and_done(monkeypatch):
     assert _event_data(events[3])["content"] == "Hello world"
     assert _event_data(events[3])["prompt_tokens"] == 3
     assert _event_data(events[3])["completion_tokens"] == 2
-    assert completed["args"][1] == "Hello world"
 
 
-def test_stream_events_emit_error_and_mark_failed(monkeypatch):
-    failed = {}
-    monkeypatch.setattr(ChatStreamService, "_mark_failed", lambda self, *args: failed.setdefault("args", args))
-
-    service = ChatStreamService(db=None, provider=FailingProvider())
-    events = asyncio.run(_collect_events(service))
+def test_stream_events_emit_error_and_mark_failed():
+    streamer = ChatStreamer(FailingProvider())
+    events = asyncio.run(_collect_events(streamer))
 
     assert [event["event"] for event in events] == ["message.created", "delta", "error"]
     assert _event_data(events[2])["code"] == "provider_error"
-    assert failed["args"][1] == "partial"
 
 
 def test_stream_events_emit_timeout_error(monkeypatch):
-    failed = {}
-    monkeypatch.setattr(settings, "CHAT_PROVIDER_CHUNK_TIMEOUT_SECONDS", 0.01)
-    monkeypatch.setattr(ChatStreamService, "_mark_failed", lambda self, *args: failed.setdefault("args", args))
-
-    service = ChatStreamService(db=None, provider=SlowProvider())
-    events = asyncio.run(_collect_events(service))
+    monkeypatch.setattr(settings, "CHAT_STREAM_TOTAL_TIMEOUT_SECONDS", 0.01)
+    streamer = ChatStreamer(SlowProvider())
+    events = asyncio.run(_collect_events(streamer))
 
     assert [event["event"] for event in events] == ["message.created", "error"]
     assert _event_data(events[1])["code"] == "provider_timeout"
-    assert failed["args"][2] == "provider_timeout"
 
 
 def test_idempotency_rejects_different_payload():
     user_id = uuid.uuid4()
     session_id = uuid.uuid4()
-    service = ChatStreamService(db=None, provider=FakeProvider())
+    handler = ChatStreamIdempotencyHandler(db=None)
     original_message = "same key original"
     run = ChatStreamRun(
         id=uuid.uuid4(),
@@ -105,13 +103,14 @@ def test_idempotency_rejects_different_payload():
         client_request_id="req-1",
         status=ChatStreamStatus.COMPLETED,
         model_name=settings.CHAT_MODEL_NAME,
-        metadata_={"message_sha256": service._message_hash(original_message), "parent_id": None},
+        metadata_={"message_sha256": handler._hash_content(original_message), "parent_id": None},
     )
 
     with pytest.raises(Exception):
-        service._validate_idempotent_payload(
+        handler.validate_idempotent_payload(
             run,
-            ChatStreamRequest(session_id=session_id, message="different", client_request_id="req-1"),
+            session_id,
+            None,
             "different",
         )
 

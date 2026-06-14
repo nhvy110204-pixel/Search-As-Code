@@ -16,4 +16,12 @@ class ProjectService(BaseService[Project, ProjectCreate, ProjectUpdate]):
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
     ) -> ProjectListResponse:
-        return self.project_repo.list_projects(page=page, page_size=page_size, filters=filters)
+        from app.schemas.dto.project import ProjectResponse
+        projects, total = self.project_repo.list_projects(page=page, page_size=page_size, filters=filters)
+        project_responses = [ProjectResponse.model_validate(p) for p in projects]
+        return ProjectListResponse(
+            items=project_responses,
+            total=total,
+            page=page,
+            page_size=page_size
+        )

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.chat_message import ChatMessage
 from app.repositories.base import BaseRepository
-from app.schemas.dto.chat_message import ChatMessageCreate, ChatMessageListResponse, ChatMessageResponse, ChatMessageUpdate
+from app.schemas.dto.chat_message import ChatMessageCreate, ChatMessageUpdate
 
 
 class ChatMessageRepository(BaseRepository[ChatMessage, ChatMessageCreate, ChatMessageUpdate]):
@@ -20,8 +20,8 @@ class ChatMessageRepository(BaseRepository[ChatMessage, ChatMessageCreate, ChatM
         page: int = 1,
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
-    ) -> ChatMessageListResponse:
-        """Phân trang chat messages."""
+    ) -> tuple[list[ChatMessage], int]:
+        """Paginate chat messages. Returns (messages, total)."""
         query = select(ChatMessage)
 
         if filters:
@@ -37,14 +37,7 @@ class ChatMessageRepository(BaseRepository[ChatMessage, ChatMessageCreate, ChatM
         query = query.offset((page - 1) * page_size).limit(page_size)
         results = self.db.execute(query).scalars().all()
 
-        message_responses = [ChatMessageResponse.model_validate(m) for m in results]
-
-        return ChatMessageListResponse(
-            items=message_responses,
-            total=total,
-            page=page,
-            page_size=page_size
-        )
+        return list(results), total
 
     def get_by_session(self, session_id: uuid.UUID, skip: int = 0, limit: int = 100) -> list[ChatMessage]:
         """Lấy danh sách messages theo session."""

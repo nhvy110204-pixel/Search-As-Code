@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.project import Project
 from app.repositories.base import BaseRepository
-from app.schemas.dto.project import ProjectCreate, ProjectListResponse, ProjectResponse, ProjectUpdate
+from app.schemas.dto.project import ProjectCreate, ProjectUpdate
 
 class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
     def __init__(self, db: Session):
@@ -19,11 +19,8 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
         page: int = 1,
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
-    ) -> ProjectListResponse:
-        """
-        Xử lý phân trang tập trung tại Repository.
-        Trả về DTO hoàn chỉnh chứa danh sách items và thông tin phân trang.
-        """
+    ) -> tuple[list[Project], int]:
+        """Paginate projects. Returns (projects, total)."""
         query = select(Project)
 
         if filters:
@@ -41,11 +38,4 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
         query = query.offset((page - 1) * page_size).limit(page_size)
         results = self.db.execute(query).scalars().all()
 
-        project_responses = [ProjectResponse.model_validate(p) for p in results]
-        
-        return ProjectListResponse(
-            items=project_responses,
-            total=total,
-            page=page,
-            page_size=page_size
-        )
+        return list(results), total

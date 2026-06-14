@@ -18,7 +18,15 @@ class DocumentChunkService(BaseService[DocumentChunk, DocumentChunkCreate, Docum
         filters: Optional[Dict[str, Any]] = None,
     ) -> DocumentChunkListResponse:
         """Domain method: paginated chunk list."""
-        return self.chunk_repo.list_document_chunks(page=page, page_size=page_size, filters=filters)
+        from app.schemas.dto.document_chunk import DocumentChunkResponse
+        chunks, total = self.chunk_repo.list_document_chunks(page=page, page_size=page_size, filters=filters)
+        chunk_responses = [DocumentChunkResponse.model_validate(c) for c in chunks]
+        return DocumentChunkListResponse(
+            items=chunk_responses,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
 
     def get_by_embedding_id(self, embedding_id: uuid.UUID) -> Optional[DocumentChunk]:
         """Domain method: get chunk by embedding ID."""

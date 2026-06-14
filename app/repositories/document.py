@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document
 from app.repositories.base import BaseRepository
-from app.schemas.dto.document import DocumentCreate, DocumentListResponse, DocumentResponse, DocumentUpdate
+from app.schemas.dto.document import DocumentCreate, DocumentUpdate
 
 
 class DocumentRepository(BaseRepository[Document, DocumentCreate, DocumentUpdate]):
@@ -20,9 +20,9 @@ class DocumentRepository(BaseRepository[Document, DocumentCreate, DocumentUpdate
         page: int = 1,
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
-    ) -> DocumentListResponse:
+    ) -> tuple[list[Document], int]:
         """
-        Phân trang tài liệu với filters.
+        Paginate documents. Returns (documents, total).
         """
         query = select(Document)
 
@@ -43,14 +43,7 @@ class DocumentRepository(BaseRepository[Document, DocumentCreate, DocumentUpdate
         query = query.offset((page - 1) * page_size).limit(page_size)
         results = self.db.execute(query).scalars().all()
 
-        document_responses = [DocumentResponse.model_validate(d) for d in results]
-
-        return DocumentListResponse(
-            items=document_responses,
-            total=total,
-            page=page,
-            page_size=page_size
-        )
+        return list(results), total
 
     def get_by_project(self, project_id: uuid.UUID, skip: int = 0, limit: int = 100) -> list[Document]:
         """Lấy danh sách documents theo project."""

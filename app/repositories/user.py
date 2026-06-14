@@ -3,8 +3,6 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.repositories.base import BaseRepository
-from app.schemas.dto.user import UserListResponse
-
 
 class UserRepository(BaseRepository[User, object, object]):
     def __init__(self, db: Session):
@@ -31,11 +29,6 @@ class UserRepository(BaseRepository[User, object, object]):
         options: list | None = None,
         include_deleted: bool = False,
     ):
-        """Return raw data for pagination: (items, total).
-
-        Repository should remain DB-focused and not construct response DTOs or
-        know about `page`/`page_size` semantics beyond calculating offsets.
-        """
         if page < 1:
             page = 1
         skip = (page - 1) * page_size
