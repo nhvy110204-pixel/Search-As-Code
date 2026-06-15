@@ -7,6 +7,7 @@ from .user_memory import UserMemory, MemoryType
 from .project import Project
 from .session_input import SessionInput
 from .document import Document, DocumentChunk, DocumentStatus
+from .document_chunk_link import DocumentChunkLink
 from .chat_session import ChatSession
 from .chat_message import ChatMessage, MessageRole, MessageStatus
 from .chat_stream_run import ChatStreamRun, ChatStreamStatus
@@ -30,6 +31,7 @@ __all__ = [
     "SessionInput",
     "Document",
     "DocumentChunk",
+    "DocumentChunkLink",
     "DocumentStatus",
     "ChatSession",
     "ChatMessage",

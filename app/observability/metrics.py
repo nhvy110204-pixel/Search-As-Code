@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import time
-from prometheus_client import Counter, Histogram, Summary, make_asgi_app
+from prometheus_client import Counter, Gauge, Histogram, Summary, make_asgi_app
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config.settings import settings
@@ -73,6 +73,90 @@ CHAT_STREAM_TIME_TO_FIRST_DELTA_SECONDS = Histogram(
     buckets=AI_LATENCY_BUCKETS,
 )
 
+# Ingestion pipeline metrics
+UPLOAD_REQUESTS_TOTAL = Counter(
+    'upload_requests_total',
+    'Total upload requests',
+    ['status']  # success, failed, quota_exceeded, rate_limited
+)
+
+UPLOAD_FILE_SIZE_BYTES = Histogram(
+    'upload_file_size_bytes',
+    'File size distribution for uploads',
+    buckets=[1e6, 10e6, 50e6, 100e6]  # 1MB, 10MB, 50MB, 100MB
+)
+
+QUOTA_EXCEEDED_TOTAL = Counter(
+    'quota_exceeded_total',
+    'Total quota exceeded errors',
+    ['user_id', 'project_id']
+)
+
+RATE_LIMIT_EXCEEDED_TOTAL = Counter(
+    'rate_limit_exceeded_total',
+    'Total rate limit exceeded errors',
+    ['key_type']  # user, project
+)
+
+INGESTION_TASKS_TOTAL = Counter(
+    'ingestion_tasks_total',
+    'Total ingestion tasks',
+    ['status']  # pending, processing, completed, failed
+)
+
+INGESTION_STEP_DURATION_SECONDS = Histogram(
+    'ingestion_step_duration_seconds',
+    'Duration of ingestion pipeline steps',
+    ['step'],  # parse, summary, chunk, dedup, enrich, embed, link, finalize
+    buckets=[0.1, 0.5, 1, 5, 10, 30, 60, 300]
+)
+
+INGESTION_STEP_RETRIES_TOTAL = Counter(
+    'ingestion_step_retries_total',
+    'Total retries for ingestion steps',
+    ['step']
+)
+
+INGESTION_FAILED_CHUNKS_TOTAL = Counter(
+    'ingestion_failed_chunks_total',
+    'Total failed chunks during embedding',
+    ['document_id']
+)
+
+INGESTION_EMBEDDING_BATCH_SIZE = Histogram(
+    'ingestion_embedding_batch_size',
+    'Batch size for embedding operations',
+    buckets=[1, 5, 10, 20, 50, 100]
+)
+
+INGESTION_COST_USD_TOTAL = Counter(
+    'ingestion_cost_usd_total',
+    'Total cost in USD for ingestion operations',
+    ['operation']  # embedding, summarization
+)
+
+INGESTION_DOCUMENT_SIZE_BYTES = Histogram(
+    'ingestion_document_size_bytes',
+    'Document size distribution for ingestion',
+    buckets=[1e4, 1e5, 1e6, 10e6, 100e6]  # 10KB, 100KB, 1MB, 10MB, 100MB
+)
+
+INGESTION_QDRANT_UPSERTS_TOTAL = Counter(
+    'ingestion_qdrant_upserts_total',
+    'Total Qdrant upsert operations',
+    ['status']  # success, failed
+)
+
+INGESTION_ACTIVE_TASKS = Gauge(
+    'ingestion_active_tasks',
+    'Number of currently active ingestion tasks'
+)
+
+INGESTION_CHUNK_DEDUP_RATIO = Gauge(
+    'ingestion_chunk_dedup_ratio',
+    'Ratio of deduplicated chunks (existing / total)',
+    ['document_id']
+)
 
 class ASGIMetricsMiddleware:
     """Pure ASGI Middleware: Đảm bảo luồng Stream Token,
@@ -178,3 +262,83 @@ def record_chat_stream_failed(duration_seconds: float):
 def record_chat_stream_disconnected(duration_seconds: float):
     CHAT_STREAMS_TOTAL.labels(status="disconnected").inc()
     CHAT_STREAM_DURATION_SECONDS.labels(status="disconnected").observe(duration_seconds)
+
+# Ingestion metric helper functions
+def track_upload_status(status: str):
+    """Track upload request status."""
+    UPLOAD_REQUESTS_TOTAL.labels(status=status).inc()
+
+
+def track_file_size(file_size: int):
+    """Track uploaded file size."""
+    UPLOAD_FILE_SIZE_BYTES.observe(file_size)
+
+
+def track_quota_exceeded(user_id: str, project_id: str):
+    """Track quota exceeded event."""
+    QUOTA_EXCEEDED_TOTAL.labels(user_id=user_id, project_id=project_id).inc()
+
+
+def track_rate_limit_exceeded(key_type: str):
+    """Track rate limit exceeded event."""
+    RATE_LIMIT_EXCEEDED_TOTAL.labels(key_type=key_type).inc()
+
+
+def track_ingestion_task_status(status: str):
+    """Track ingestion task status change."""
+    INGESTION_TASKS_TOTAL.labels(status=status).inc()
+
+
+def track_step_duration(step_name: str):
+    """Decorator to track step duration in Prometheus."""
+    def decorator(func):
+        async def wrapper(*args, **kwargs):
+            import time
+            start_time = time.time()
+            try:
+                result = await func(*args, **kwargs)
+                duration = time.time() - start_time
+                INGESTION_STEP_DURATION_SECONDS.labels(step=step_name).observe(duration)
+                return result
+            except Exception as e:
+                duration = time.time() - start_time
+                INGESTION_STEP_DURATION_SECONDS.labels(step=step_name).observe(duration)
+                INGESTION_STEP_RETRIES_TOTAL.labels(step=step_name).inc()
+                raise
+        return wrapper
+    return decorator
+
+
+def track_failed_chunks(document_id: str, count: int):
+    """Track failed chunks for a document."""
+    INGESTION_FAILED_CHUNKS_TOTAL.labels(document_id=document_id).inc(count)
+
+
+def track_embedding_batch_size(batch_size: int):
+    """Track embedding batch size."""
+    INGESTION_EMBEDDING_BATCH_SIZE.observe(batch_size)
+
+
+def track_cost(operation: str, cost_usd: float):
+    """Track operation cost in USD."""
+    INGESTION_COST_USD_TOTAL.labels(operation=operation).inc(cost_usd)
+
+
+def track_document_size(document_size: int):
+    """Track document size for ingestion."""
+    INGESTION_DOCUMENT_SIZE_BYTES.observe(document_size)
+
+
+def track_qdrant_upsert(status: str):
+    """Track Qdrant upsert operation."""
+    INGESTION_QDRANT_UPSERTS_TOTAL.labels(status=status).inc()
+
+
+def set_active_tasks(count: int):
+    """Set the number of active ingestion tasks."""
+    INGESTION_ACTIVE_TASKS.set(count)
+
+
+def set_chunk_dedup_ratio(document_id: str, ratio: float):
+    """Set the chunk deduplication ratio for a document."""
+    INGESTION_CHUNK_DEDUP_RATIO.labels(document_id=document_id).set(ratio)

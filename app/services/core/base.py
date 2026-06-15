@@ -1,6 +1,7 @@
 from typing import Generic, List, Optional, TypeVar, Any, Dict
 from uuid import UUID
 from pydantic import BaseModel
+from app.core.logger import service_boundary
 
 ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -11,9 +12,11 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     def __init__(self, repository):
         self.repo = repository
 
+    @service_boundary("Get Entity")
     def get(self, id: UUID, include_deleted: bool = False, options: List = None) -> Optional[ModelType]:
         return self.repo.get(id=id, include_deleted=include_deleted, options=options)
 
+    @service_boundary("Get Multi Entities")
     def get_multi(
         self,
         *,
@@ -33,15 +36,18 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             include_deleted=include_deleted,
         )
 
+    @service_boundary("Create Entity")
     def create(self, obj_in: CreateSchemaType) -> ModelType:
         return self.repo.create(obj_in)
 
+    @service_boundary("Update Entity")
     def update(self, id: UUID, obj_in: UpdateSchemaType | Dict[str, Any]) -> Optional[ModelType]:
         db_obj = self.repo.get(id)
         if not db_obj:
             return None
         return self.repo.update(db_obj, obj_in)
 
+    @service_boundary("Delete Entity")
     def delete(self, id: UUID, hard: bool = False) -> bool:
         if hard:
             return self.repo.hard_delete(id)

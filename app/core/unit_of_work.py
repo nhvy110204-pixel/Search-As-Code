@@ -6,6 +6,8 @@ from app.repositories.user import UserRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.document import DocumentRepository
 from app.repositories.document_chunk import DocumentChunkRepository
+from app.repositories.document_chunk_link import DocumentChunkLinkRepository
+from app.repositories.ingestion_task import IngestionTaskRepository
 from app.repositories.chat_session import ChatSessionRepository
 from app.repositories.chat_message import ChatMessageRepository
 
@@ -23,6 +25,8 @@ class UnitOfWork(AbstractContextManager):
         self.projects = ProjectRepository(self.db)
         self.documents = DocumentRepository(self.db)
         self.document_chunks = DocumentChunkRepository(self.db)
+        self.document_chunk_links = DocumentChunkLinkRepository(self.db)
+        self.ingestion_tasks = IngestionTaskRepository(self.db)
         self.chat_sessions = ChatSessionRepository(self.db)
         self.chat_messages = ChatMessageRepository(self.db)
 

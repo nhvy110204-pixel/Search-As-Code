@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config.settings import settings
 from app.core.database import SessionLocal
+from app.core.logger import service_boundary
 from app.models.chat_stream_run import ChatStreamRun
 from app.models.user import User
 from app.observability.metrics import record_chat_stream_started
@@ -55,6 +56,7 @@ class ChatStreamService:
         self.streamer = ChatStreamer(self.provider)
         self.outcome = ChatStreamOutcomeHandler(session_factory, self.stream_run_repo)
 
+    @service_boundary("Prepare Chat Stream")
     def prepare_stream(self, payload: ChatStreamRequest, user: User) -> PreparedChatStream:
         content = payload.message.strip()
         self.validator.validate_message(content)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from typing import Any, Optional, TYPE_CHECKING
-from sqlalchemy import ForeignKey, String, Text, Integer, Index, text
+from sqlalchemy import ForeignKey, String, Text, Integer, Index, text, Boolean, LargeBinary
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,19 +26,31 @@ class Document(AIEntityMixin, Base):
     
     file_name: Mapped[str] = mapped_column(String(255), nullable=False, comment="Tên tài liệu / Tên Project")
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Mô tả tóm tắt nội dung tài liệu")
-    storage_path: Mapped[str] = mapped_column(String(512), nullable=False, comment="Đường dẫn file trên Object Storage S3/MinIO")
-    markdown_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="Đường dẫn file markdown sau khi convert")
+    file_content: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True, comment="Nội dung file gốc lưu trong PostgreSQL BYTEA (max 100MB)")
+    is_compressed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False, comment="Đánh dấu nếu file_content đã được nén gzip")
+    markdown_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Nội dung markdown sau khi parse từ file gốc")
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, comment="Kích thước storage thực tế để tracking quota")
     mime_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    status: Mapped[DocumentStatus] = mapped_column(String(20), default=DocumentStatus.PENDING, server_default=text("'pending'"), nullable=False)
+    status: Mapped[DocumentStatus] = mapped_column(String(30), default=DocumentStatus.PENDING, server_default=text("'pending'"), nullable=False)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
-    blake3_hash: Mapped[str] = mapped_column(String(32), nullable=False, index=True, comment="Mã băm MD5 của file gốc để tránh xử lý trùng lặp")
+    blake3_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="Mã băm blake3 của file gốc để tránh xử lý trùng lặp")
+    has_partial_failures: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False, comment="Đánh dấu nếu có chunk embedding thất bại")
 
     processing_metadata: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         default=dict,
         server_default=text("'{}'::jsonb"),
         nullable=False,
+        comment="Metadata xử lý: global_summary, document-level metadata"
+    )
+
+    pipeline_state: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+        comment="Checkpoint state để resume pipeline từ step bị crash"
     )
 
     user: Mapped["User"] = relationship("User", back_populates="documents")
@@ -51,7 +63,7 @@ class Document(AIEntityMixin, Base):
     __table_args__ = (
         Index("idx_documents_project_status", "project_id", "status"),
         Index("idx_documents_user_status", "user_id", "status"),
-        Index("idx_documents_project_hash", "project_id", "blake3_hash"),
+        Index("idx_documents_project_hash_unique", "project_id", "blake3_hash", unique=True),
     )
 
 
@@ -65,9 +77,12 @@ class DocumentChunk(AIEntityMixin, Base):
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, comment="Thứ tự của đoạn văn phục vụ việc tái cấu trúc ngữ cảnh")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="Nội dung chữ thô của đoạn")
-    chunk_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    enriched_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Nội dung sau khi enrich với title + global summary")
+    chunk_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="Blake3 hash của chunk content cho dedup")
     token_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
     page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    embed_status: Mapped[str] = mapped_column(String(20), default="pending", server_default=text("'pending'"), nullable=False, comment="pending, done, failed")
+    chunk_source: Mapped[str] = mapped_column(String(50), default="auto", server_default=text("'auto'"), nullable=False, comment="auto vs existing (cho chunk dedup)")
 
     # Qdrant embedding_id (UUID reference)
     embedding_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True, comment="Reference to vector in Qdrant")
@@ -78,5 +93,5 @@ class DocumentChunk(AIEntityMixin, Base):
 
     __table_args__ = (
         Index("idx_chunks_document_id", "document_id"),
-        Index("idx_chunks_document_hash", "document_id", "chunk_hash", unique=True),
+        Index("idx_chunks_hash_unique", "chunk_hash", unique=True),
     )

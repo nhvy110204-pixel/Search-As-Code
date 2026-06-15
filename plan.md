@@ -65,8 +65,8 @@ Phase 5 — Observability stack deployment
 - Add sample Grafana dashboards (JSON) for quick import
 
 Checklist:
-- [ ] `docker/docker-compose.observability.yml`
-- [ ] `docker/prometheus/prometheus.yml` with scrape configs
+- [x] `docker/docker-compose.observability.yml`
+- [x] `docker/prometheus/prometheus.yml` with scrape configs
 - [ ] Grafana dashboard JSON files in `docker/grafana/dashboards/`
 
 Phase 6 — Dashboards & Alerts (alerting policy rules)

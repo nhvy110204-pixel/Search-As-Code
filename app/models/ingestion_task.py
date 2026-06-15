@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
-from sqlalchemy import ForeignKey, String, Text, Float, DateTime, text
+from sqlalchemy import ForeignKey, String, Text, Float, DateTime, Integer, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.shared.enums import IngestionTaskStatus
@@ -75,6 +75,10 @@ class IngestionTask(AIEntityMixin, Base):
 
     chunking_strategy: Mapped[str] = mapped_column(String(50), default="structural_markdown", server_default=text("'structural_markdown'"))
     embedding_model: Mapped[str] = mapped_column(String(100), default="bge-small-en-v1.5", server_default=text("'bge-small-en-v1.5'"))
+
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False, comment="Số lần retry task")
+    last_error_step: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="Step cuối cùng gặp lỗi")
+    worker_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="ID của worker đang xử lý task")
 
     document: Mapped["Document"] = relationship("Document")
     project: Mapped["Project"] = relationship("Project")

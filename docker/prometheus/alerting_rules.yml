@@ -1,0 +1,38 @@
+groups:
+  - name: ingestion_alerts
+    rules:
+      - alert: HighUploadFailureRate
+        expr: rate(upload_requests_total{status="failed"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High upload failure rate detected"
+          description: "Upload failure rate is {{ $value }} per second"
+
+      - alert: QuotaExceededSpike
+        expr: rate(quota_exceeded_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Quota exceeded errors spiking"
+          description: "Quota exceeded rate is {{ $value }} per second"
+
+      - alert: IngestionTaskBacklog
+        expr: ingestion_tasks_total{status="pending"} > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ingestion task backlog growing"
+          description: "{{ $value }} pending ingestion tasks"
+
+      - alert: HighChunkFailureRate
+        expr: rate(ingestion_failed_chunks_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High chunk embedding failure rate"
+          description: "Chunk failure rate is {{ $value }} per second"

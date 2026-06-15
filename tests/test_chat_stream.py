@@ -83,7 +83,7 @@ def test_stream_events_emit_error_and_mark_failed():
 
 
 def test_stream_events_emit_timeout_error(monkeypatch):
-    monkeypatch.setattr(settings, "CHAT_STREAM_TOTAL_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(settings, "CHAT_PROVIDER_CHUNK_TIMEOUT_SECONDS", 0.01)
     streamer = ChatStreamer(SlowProvider())
     events = asyncio.run(_collect_events(streamer))
 
@@ -94,7 +94,7 @@ def test_stream_events_emit_timeout_error(monkeypatch):
 def test_idempotency_rejects_different_payload():
     user_id = uuid.uuid4()
     session_id = uuid.uuid4()
-    handler = ChatStreamIdempotencyHandler(db=None)
+    handler = ChatStreamIdempotencyHandler(stream_run_repo=None, message_repo=None)
     original_message = "same key original"
     run = ChatStreamRun(
         id=uuid.uuid4(),

@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: ragflash-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ragflash-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ragflash-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ragflash-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ragflash-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage:z
+    networks:
+      - ragflash-network
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ragflash-celery-worker
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4 -Q ingestion
+    volumes:
+      - .:/app
+    environment:
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - ragflash-network
+
+volumes:
+  rabbitmq_data:
+    driver: local
+  redis_data:
+    driver: local
+  qdrant_data:
+    driver: local
+
+networks:
+  ragflash-network:
+    driver: bridge

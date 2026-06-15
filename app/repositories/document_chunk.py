@@ -1,8 +1,9 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from uuid import UUID
 
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert
 
 from app.models.document import DocumentChunk
 from app.schemas.dto.document_chunk import DocumentChunkCreate, DocumentChunkUpdate
@@ -113,3 +114,61 @@ class DocumentChunkRepository(
         results = self.db.execute(query).scalars().all()
 
         return list(results), total
+
+    def find_by_chunk_hash(self, chunk_hash: str) -> Optional[DocumentChunk]:
+
+        query = select(DocumentChunk).where(
+            DocumentChunk.chunk_hash == chunk_hash,
+            DocumentChunk.is_deleted.is_(False)
+        )
+        return self.db.execute(query).scalar_one_or_none()
+
+    def insert_chunk_if_not_exists(self, chunk_data: Dict[str, Any]) -> Tuple[DocumentChunk, bool]:
+
+        chunk_hash = chunk_data["chunk_hash"]
+        
+        stmt = insert(DocumentChunk).values(chunk_data)
+        stmt = stmt.on_conflict_do_nothing(index_elements=["chunk_hash"])
+        
+        result = self.db.execute(stmt)
+        
+        if result.rowcount == 0:
+            existing = self.find_by_chunk_hash(chunk_hash)
+            return existing, False
+        else:
+            new_chunk = self.find_by_chunk_hash(chunk_hash)
+            return new_chunk, True
+
+    def batch_insert_chunks_if_not_exists(self, chunks: List[Dict[str, Any]]) -> List[Tuple[DocumentChunk, bool]]:
+
+        if not chunks:
+            return []
+        
+        results = []
+        chunk_hashes = {chunk["chunk_hash"] for chunk in chunks}
+        
+        stmt = insert(DocumentChunk).values(chunks)
+        stmt = stmt.on_conflict_do_nothing(index_elements=["chunk_hash"])
+        self.db.execute(stmt)
+        self.db.flush()
+        
+        for chunk_hash in chunk_hashes:
+            chunk = self.find_by_chunk_hash(chunk_hash)
+            if chunk:
+                original_chunk = next((c for c in chunks if c["chunk_hash"] == chunk_hash), None)
+                if original_chunk and chunk.document_id == original_chunk.get("document_id"):
+                    results.append((chunk, True))
+                else:
+                    results.append((chunk, False))
+        
+        return results
+
+    def update_embed_status(self, chunk_id: UUID, status: str) -> None:
+        stmt = update(DocumentChunk).where(DocumentChunk.id == chunk_id).values(embed_status=status)
+        self.db.execute(stmt)
+        self.db.flush()
+
+    def update_enriched_content(self, chunk_id: UUID, content: str) -> None:
+        stmt = update(DocumentChunk).where(DocumentChunk.id == chunk_id).values(enriched_content=content)
+        self.db.execute(stmt)
+        self.db.flush()

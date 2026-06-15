@@ -59,3 +59,9 @@ test
 
 # Cookies data (sensitive)
 data/cookies/
+
+# Plan file
+plan.md
+
+# Architecture document
+PROJECT_ARCHITECTURE.md

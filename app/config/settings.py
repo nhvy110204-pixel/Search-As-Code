@@ -52,6 +52,34 @@ class Settings(BaseSettings):
     # Prometheus multiprocess mode 
     PROMETHEUS_MULTIPROC_DIR: Optional[str] = None
 
+    # Celery configuration
+    CELERY_BROKER_URL: str = "amqp://guest:guest@localhost:5672//"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    CELERY_INGESTION_QUEUE: str = "ingestion"
+
+    # Redis configuration
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+
+    # File upload configuration
+    MAX_FILE_SIZE_BYTES: int = 100 * 1024 * 1024  # 100MB
+    USER_QUOTA_DEFAULT_BYTES: int = 100 * 1024 * 1024 * 1024  # 100GB
+    ALLOWED_FILE_TYPES: list[str] = [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+        "text/markdown"
+    ]
+    ALLOWED_FILE_EXTENSIONS: list[str] = [".pdf", ".docx", ".txt", ".md"]
+
+    # Rate limiting
+    RATE_LIMIT_USER_UPLOADS_PER_MINUTE: int = 10
+    RATE_LIMIT_PROJECT_UPLOADS_PER_MINUTE: int = 100
+
+    # Pipeline configuration
+    CLEANUP_PIPELINE_STATE_ON_COMPLETION: bool = False  # Keep for debugging by default
+
     # Embedding provider configuration
     EMBEDDING_PROVIDER: str = "openai"
     EMBEDDING_MODEL_NAME: str = "text-embedding-3-small"

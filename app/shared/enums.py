@@ -21,9 +21,24 @@ class ChatStreamStatus(str, enum.Enum):
 
 class DocumentStatus(str, enum.Enum):
     PENDING = "pending"          # Chờ xử lý parse văn bản
+    PARSING = "parsing"          # Đang parse văn bản
+    PARSED = "parsed"            # Đã parse xong sang markdown
+    SUMMARIZING = "summarizing"  # Đang tóm tắt tài liệu
+    CHUNKING = "chunking"        # Đang cắt nhỏ văn bản
+    DEDUPED = "deduped"          # Đã dedup chunks
+    ENRICHED = "enriched"        # Đã enrich chunks với context
+    EMBEDDING = "embedding"      # Đang sinh embedding
+    LINKED = "linked"            # Đã link chunks với document
     PROCESSING = "processing"    # Đang cắt nhỏ (Chunking) và sinh Embedding
     COMPLETED = "completed"      # Đã xử lý xong, sẵn sàng tra cứu RAG
+    COMPLETED_WITH_WARNINGS = "completed_with_warnings"  # Đã xử lý xong nhưng có một số chunk lỗi
     FAILED = "failed"            # Gặp sự cố phân tích file
+
+class StepStatus(str, enum.Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+    FAILED = "failed"
 
 class TaskStatus(str, enum.Enum):
     PENDING = "pending"
