@@ -19,12 +19,17 @@ class QdrantManager:
         return cls._instance
     
     def __init__(self):
+        pass
+
+    @property
+    def client(self) -> QdrantClient:
         if self._client is None:
             self._client = QdrantClient(
                 url=settings.QDRANT_URL,
                 api_key=settings.QDRANT_API_KEY,
             )
             self._init_collections()
+        return self._client
     
     def _init_collections(self):
         try:
@@ -55,7 +60,7 @@ class QdrantManager:
             vector=vector,
             payload=payload,
         )
-        self._client.upsert(
+        self.client.upsert(
             collection_name=collection_name,
             points=[point],
         )
@@ -67,7 +72,7 @@ class QdrantManager:
         limit: int = 10,
         score_threshold: float = 0.5,
     ) -> List[dict]:
-        results = self._client.search(
+        results = self.client.search(
             collection_name=collection_name,
             query_vector=query_vector,
             limit=limit,
@@ -83,18 +88,18 @@ class QdrantManager:
         ]
     
     def delete_vector(self, collection_name: str, embedding_id: uuid.UUID) -> None:
-        self._client.delete(
+        self.client.delete(
             collection_name=collection_name,
             points_selector=PointIdsList(points=[str(embedding_id)]), # Sửa ở đây
         )
-
+ 
     def delete_vectors_by_filter(self, collection_name: str, filter_condition: Filter) -> None:
-        self._client.delete(
+        self.client.delete(
             collection_name=collection_name,
             points_selector=filter_condition,
         )
     
     def get_client(self) -> QdrantClient:
-        return self._client
+        return self.client
 
 qdrant_manager = QdrantManager()

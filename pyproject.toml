@@ -31,6 +31,8 @@ blake3 = "^0.4.0"
 python-magic = "^0.4.27"
 docling = "^2.102.2"
 tiktoken = "^0.13.0"
+langchain-core = "^1.4.7"
+langgraph = "^1.2.5"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"
