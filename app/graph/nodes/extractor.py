@@ -7,7 +7,7 @@ from langchain_openai import ChatOpenAI
 from app.config.settings import settings
 from app.core.database import SessionLocal
 from app.graph.state.agent_state import AgentState
-from app.services.memory_service import MemoryService
+from app.services.agent.memory_service import MemoryService
 from app.shared.enums import MemoryType
 
 logger = logging.getLogger(__name__)

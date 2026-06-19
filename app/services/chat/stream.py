@@ -25,6 +25,9 @@ from app.services.chat.providers import ChatCompletionProvider, OpenAIChatComple
 from app.services.chat.streamer import ChatStreamer
 from app.services.chat.validators import ChatStreamValidator
 from app.shared.enums import ChatStreamStatus
+from blake3 import blake3
+from app.services.chat.semantic_cache import semantic_cache
+from app.tasks.chat_tasks import save_semantic_cache
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +83,6 @@ class ChatStreamService:
         self.validator.enforce_rate_limits(user.id)
 
         # Kiểm tra Semantic Cache (Lock và đọc cache)
-        from app.services.chat.semantic_cache import semantic_cache
-        from blake3 import blake3
         
         query_hash = blake3(content.encode("utf-8")).hexdigest()
         cached_answer, lock_acquired = await semantic_cache.get_or_lock(content)
@@ -198,7 +199,6 @@ class ChatStreamService:
             )
             # Nếu request này giữ lock ghi cache, gọi Celery task lưu cache dưới nền
             if prepared.query_hash:
-                from app.tasks.chat_tasks import save_semantic_cache
                 query = prepared.messages[-1]["content"] if prepared.messages else ""
                 save_semantic_cache.delay(
                     query=query,
@@ -219,7 +219,6 @@ class ChatStreamService:
             )
             # Giải phóng lock nếu luồng sinh bị lỗi
             if prepared.query_hash:
-                from app.services.chat.semantic_cache import semantic_cache
                 semantic_cache.release_lock(prepared.query_hash)
 
         def on_timeout(content: str, started_at_: float, first_delta_at: float | None):
@@ -233,7 +232,6 @@ class ChatStreamService:
             )
             # Giải phóng lock nếu luồng sinh bị timeout
             if prepared.query_hash:
-                from app.services.chat.semantic_cache import semantic_cache
                 semantic_cache.release_lock(prepared.query_hash)
 
         async for event in self.streamer.stream_events(

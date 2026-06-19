@@ -1,6 +1,7 @@
 import uuid
 import logging
 from typing import List
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 
@@ -118,6 +119,5 @@ class MemoryService:
         except Exception as e:
             logger.warning("Tìm kiếm bộ nhớ Qdrant thất bại, dự phòng vào truy vấn db: %s", str(e))
             # Dự phòng: truy vấn metadata trực tiếp PostgreSQL nếu Qdrant thất bại hoặc ngoại tuyến
-            from sqlalchemy import select
             stmt = select(UserMemory.content).where(UserMemory.user_id == user_id).limit(limit)
             return list(db.scalars(stmt).all())

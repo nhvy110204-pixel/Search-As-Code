@@ -1,9 +1,12 @@
 import tempfile
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.graph.state.agent_state import AgentState
+from app.core.database import SessionLocal
+from app.services.agent.memory_service import MemoryService
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +83,6 @@ async def planner_node(state: AgentState) -> dict:
     constraints = state.get("constraints", [])
     user_id = state.get("user_id")
     recalled_memories = []
-    
-    from app.core.database import SessionLocal
-    from app.services.memory_service import MemoryService
-    import uuid
-
     db = SessionLocal()
     try:
         user_uuid = uuid.UUID(str(user_id)) if user_id else uuid.UUID("00000000-0000-0000-0000-000000000000")

@@ -2,7 +2,7 @@ import uuid
 from typing import Optional, List, Any, Dict
 from app.models.document import DocumentChunk
 from app.repositories.document_chunk import DocumentChunkRepository
-from app.schemas.dto.document_chunk import DocumentChunkCreate, DocumentChunkUpdate, DocumentChunkListResponse
+from app.schemas.dto.document_chunk import DocumentChunkCreate, DocumentChunkUpdate, DocumentChunkResponse, DocumentChunkListResponse
 from app.services.core.base import BaseService
 
 
@@ -18,7 +18,6 @@ class DocumentChunkService(BaseService[DocumentChunk, DocumentChunkCreate, Docum
         filters: Optional[Dict[str, Any]] = None,
     ) -> DocumentChunkListResponse:
         """Domain method: paginated chunk list."""
-        from app.schemas.dto.document_chunk import DocumentChunkResponse
         chunks, total = self.chunk_repo.list_document_chunks(page=page, page_size=page_size, filters=filters)
         chunk_responses = [DocumentChunkResponse.model_validate(c) for c in chunks]
         return DocumentChunkListResponse(

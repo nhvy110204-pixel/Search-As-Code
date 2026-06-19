@@ -1,5 +1,3 @@
-"""Qdrant vector database client wrapper."""
-
 from typing import Optional, List
 import uuid
 from qdrant_client import QdrantClient

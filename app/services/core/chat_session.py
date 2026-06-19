@@ -2,7 +2,7 @@ import uuid
 from typing import Optional, Any, Dict
 from app.models.chat_session import ChatSession
 from app.repositories.chat_session import ChatSessionRepository
-from app.schemas.dto.chat_session import ChatSessionCreate, ChatSessionUpdate, ChatSessionListResponse
+from app.schemas.dto.chat_session import ChatSessionCreate, ChatSessionUpdate, ChatSessionResponse, ChatSessionListResponse
 from app.services.core.base import BaseService
 
 
@@ -15,7 +15,7 @@ class ChatSessionService(BaseService[ChatSession, ChatSessionCreate, ChatSession
         """Create chat session with user_id directly."""
         create_data = payload.model_dump()
         create_data["user_id"] = user_id
-        return self.repository.create(ChatSessionCreate(**create_data))
+        return self.repo.create(ChatSessionCreate(**create_data))
 
     def get_sessions_paginated(
         self,

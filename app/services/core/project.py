@@ -2,7 +2,7 @@ import uuid
 from typing import Any, Dict, Optional
 from app.models.project import Project
 from app.repositories.project import ProjectRepository
-from app.schemas.dto.project import ProjectCreate, ProjectUpdate, ProjectListResponse
+from app.schemas.dto.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse
 from app.services.core.base import BaseService
 
 class ProjectService(BaseService[Project, ProjectCreate, ProjectUpdate]):
@@ -16,7 +16,6 @@ class ProjectService(BaseService[Project, ProjectCreate, ProjectUpdate]):
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
     ) -> ProjectListResponse:
-        from app.schemas.dto.project import ProjectResponse
         projects, total = self.project_repo.list_projects(page=page, page_size=page_size, filters=filters)
         project_responses = [ProjectResponse.model_validate(p) for p in projects]
         return ProjectListResponse(

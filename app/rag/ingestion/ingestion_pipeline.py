@@ -2,9 +2,10 @@ from uuid import UUID
 from datetime import datetime
 from typing import Optional, Callable, Any
 import logging
+import asyncio
 
 from app.rag.ingestion.pipeline_state import PipelineState
-from app.shared.enums import DocumentStatus, IngestionTaskStatus
+from app.shared.enums import DocumentStatus, IngestionTaskStatus, StepStatus
 from app.core.unit_of_work import UnitOfWork
 from app.rag.ingestion.handlers.parse_handler import parse_handler
 from app.rag.ingestion.handlers.virus_scan_handler import virus_scan_handler
@@ -168,7 +169,6 @@ class IngestionPipeline:
                     pipeline_state.mark_step_started("chunk")
                     self._save_pipeline_state(uow, document_id, pipeline_state)
                     
-                    import asyncio
                     summary_task = asyncio.create_task(
                         self.handlers["summary"](uow, document_id, project_id, pipeline_state)
                     )

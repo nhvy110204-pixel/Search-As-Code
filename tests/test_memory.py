@@ -8,7 +8,7 @@ from app.core.database import SessionLocal
 from app.models.user import User
 from app.models.user_memory import UserMemory
 from app.shared.enums import MemoryType
-from app.services.memory_service import MemoryService
+from app.services.agent.memory_service import MemoryService
 from app.graph.nodes.extractor import extractor_node
 from app.graph.graphs.agent_graph import agent_graph
 
@@ -39,7 +39,7 @@ def test_user(db_session):
 
 
 @pytest.mark.anyio
-@patch("app.services.memory_service.embed")
+@patch("app.services.agent.memory_service.embed")
 @patch("app.core.qdrant.qdrant_manager.upsert_vector")
 async def test_save_and_recall_memory(mock_upsert, mock_embed, db_session, test_user):
     # Mock SDK embedding provider
@@ -86,7 +86,7 @@ async def test_save_and_recall_memory(mock_upsert, mock_embed, db_session, test_
 
 @pytest.mark.anyio
 @patch("app.graph.nodes.extractor.ChatOpenAI")
-@patch("app.services.memory_service.embed")
+@patch("app.services.agent.memory_service.embed")
 async def test_extractor_node_saves_memories(mock_embed, mock_chat_openai, db_session, test_user):
     # Mock SDK embedding
     mock_embed.return_value = [[0.2] * 1536]
@@ -131,7 +131,7 @@ async def test_extractor_node_saves_memories(mock_embed, mock_chat_openai, db_se
 @pytest.mark.anyio
 @patch("app.graph.nodes.reasoner.ChatOpenAI")
 @patch("app.graph.nodes.extractor.ChatOpenAI")
-@patch("app.services.memory_service.embed")
+@patch("app.services.agent.memory_service.embed")
 async def test_agent_graph_full_memory_loop(mock_embed, mock_extractor_llm, mock_reasoner_llm, db_session, test_user):
     # Mock embeddings
     mock_embed.return_value = [[0.3] * 1536]

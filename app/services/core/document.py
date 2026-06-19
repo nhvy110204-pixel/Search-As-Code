@@ -2,7 +2,7 @@ import uuid
 from typing import Optional, Any, Dict
 from app.models.document import Document
 from app.repositories.document import DocumentRepository
-from app.schemas.dto.document import DocumentCreate, DocumentUpdate, DocumentListResponse
+from app.schemas.dto.document import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentListResponse
 from app.services.core.base import BaseService
 
 
@@ -17,7 +17,6 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
     ) -> DocumentListResponse:
-        from app.schemas.dto.document import DocumentResponse
         documents, total = self.doc_repo.list_documents(page=page, page_size=page_size, filters=filters)
         document_responses = [DocumentResponse.model_validate(d) for d in documents]
         return DocumentListResponse(

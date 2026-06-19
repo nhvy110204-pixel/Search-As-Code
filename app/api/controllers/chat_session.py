@@ -82,7 +82,7 @@ def update_chat_session(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to update this session"
         )
-    return service.update(db_obj=session, obj_in=payload)
+    return service.update(id=session_id, obj_in=payload)
 
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
