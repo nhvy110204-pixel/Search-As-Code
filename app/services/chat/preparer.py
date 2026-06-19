@@ -1,5 +1,4 @@
-"""Message preparation and history loading for chat streaming."""
-
+from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +10,7 @@ from app.models.chat_message import ChatMessage
 from app.schemas.dto.chat import PreparedChatStream
 from app.schemas.dto.chat_message import ChatMessageCreate
 from app.services.chat.constants import SYSTEM_PROMPT
+from app.services.core.redis_service import redis_cache_service
 from app.shared.enums import MessageRole, MessageStatus
 
 
@@ -67,6 +67,8 @@ class ChatStreamPreparer:
             )
             uow.chat_messages.update(assistant_message, {"status": MessageStatus.STREAMING})
 
+            redis_cache_service.invalidate_history(session_id)
+
             return user_message, assistant_message
 
     def build_provider_messages(
@@ -92,7 +94,11 @@ class ChatStreamPreparer:
         messages.append({"role": MessageRole.USER.value, "content": current_message})
         return messages
 
-    def _load_recent_history(self, session_id: uuid.UUID) -> list[ChatMessage]:
+    def _load_recent_history(self, session_id: uuid.UUID) -> list[Any]:
+        cached = redis_cache_service.get_cached_history(session_id)
+        if cached is not None:
+            return cached
+
         stmt = (
             select(ChatMessage)
             .where(
@@ -104,4 +110,8 @@ class ChatStreamPreparer:
             .limit(settings.CHAT_HISTORY_LIMIT)
         )
         messages = self.db.execute(stmt).scalars().all()
-        return list(reversed(messages))
+        history = list(reversed(messages))
+
+        redis_cache_service.set_cached_history(session_id, history)
+
+        return history

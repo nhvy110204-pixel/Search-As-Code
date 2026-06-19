@@ -1,4 +1,4 @@
-"""Outcome handling for chat streaming - updating run/message status."""
+"""Xử lý kết quả cho luồng chat - cập nhật trạng thái run/message."""
 
 import logging
 import time
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.unit_of_work import UnitOfWork
 from app.repositories.chat_stream_run import ChatStreamRunRepository
 from app.shared.enums import ChatStreamStatus, MessageStatus
+from app.services.core.redis_service import redis_cache_service
 
 if TYPE_CHECKING:
     from app.schemas.dto.chat import PreparedChatStream
@@ -54,7 +55,7 @@ class ChatStreamOutcomeHandler:
             },
         )
         logger.info(
-            "chat stream completed run_id=%s session_id=%s user_id=%s duration_ms=%s",
+            "luồng chat hoàn tất run_id=%s session_id=%s user_id=%s duration_ms=%s",
             prepared.run_id,
             prepared.session_id,
             prepared.user_id,
@@ -96,14 +97,14 @@ class ChatStreamOutcomeHandler:
             run_values={
                 "status": ChatStreamStatus.DISCONNECTED,
                 "error_code": "disconnected",
-                "error_message": "Client disconnected before stream completion",
+                "error_message": "Client ngắt kết nối trước khi luồng hoàn tất",
                 "completed_at": datetime.now(timezone.utc),
                 "duration_ms": self._elapsed_ms(started_at),
                 "time_to_first_delta_ms": self._elapsed_ms(started_at, first_delta_at) if first_delta_at else 0,
             },
         )
         logger.info(
-            "chat stream disconnected run_id=%s session_id=%s user_id=%s duration_ms=%s",
+            "luồng chat bị ngắt kết nối run_id=%s session_id=%s user_id=%s duration_ms=%s",
             prepared.run_id,
             prepared.session_id,
             prepared.user_id,
@@ -125,6 +126,8 @@ class ChatStreamOutcomeHandler:
                 run = self.stream_run_repo.get(prepared.run_id)
                 if run:
                     self.stream_run_repo.update(run, run_values)
+
+            redis_cache_service.invalidate_history(prepared.session_id)
         finally:
             db.close()
 

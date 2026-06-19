@@ -10,53 +10,54 @@ class TurnRecord(TypedDict):
     stderr: str
     returncode: int
     sdk_calls: int
-    state_files: List[str]   # files serialized to filesystem
-    action_summary: str      # 1 line summary of action (for working memory)
-    outcome_summary: str     # 1 line summary of outcome (for working memory)
+    state_files: List[str]   # các file được serialize ra filesystem
+    action_summary: str      # tóm tắt 1 dòng về hành động (cho bộ nhớ làm việc)
+    outcome_summary: str     # tóm tắt 1 dòng về kết quả (cho bộ nhớ làm việc)
 
 class TurnSummary(TypedDict):
-    """Compact summary of a turn — only keeps action + outcome for working memory."""
+    """Tóm tắt ngắn gọn của một vòng — chỉ giữ hành động + kết quả cho bộ nhớ làm việc."""
     turn: int
     action: str
     outcome: str
 
 class AgentState(TypedDict):
-    # --- Task context ---
+    # --- Ngữ cảnh nhiệm vụ ---
     task_id: str
-    directive: str                          # Original task directive
-    domain_context: Optional[str]           # Domain knowledge
-    constraints: List[str]                  # Task constraints
+    directive: str                          # Chỉ thị nhiệm vụ gốc
+    user_id: Optional[str]                  # ID duy nhất của người dùng (để cô lập bộ nhớ)
+    domain_context: Optional[str]           # Kiến thức miền
+    constraints: List[str]                  # Các ràng buộc nhiệm vụ
 
-    # --- Conversation history ---
+    # --- Lịch sử hội thoại ---
     messages: Annotated[List[BaseMessage], add_messages]
 
-    # --- Execution state ---
-    turns: Annotated[List[TurnRecord], operator.add]  # Append-only
+    # --- Trạng thái thực thi ---
+    turns: Annotated[List[TurnRecord], operator.add]  # Chỉ thêm vào
     current_turn: int
-    max_turns: int                          # Hard limit (default: 10)
+    max_turns: int                          # Giới hạn cứng (mặc định: 10)
 
-    # --- Sandbox state ---
-    state_dir: str                          # Path to filesystem state directory
-    state_files: List[str]                  # Files in state_dir
+    # --- Trạng thái sandbox ---
+    state_dir: str                          # Đường dẫn đến thư mục trạng thái filesystem
+    state_files: List[str]                  # Các file trong state_dir
 
-    # --- Working memory ---
-    turn_summaries: List[TurnSummary]       # Compact summaries from EXECUTOR
-    last_coverage_summary: Optional[str]    # OBSERVER updates (sdk.summarize output)
-    last_error: Optional[str]               # EXECUTOR writes when returncode != 0
+    # --- Bộ nhớ làm việc ---
+    turn_summaries: List[TurnSummary]       # Các tóm tắt ngắn gọn từ EXECUTOR
+    last_coverage_summary: Optional[str]    # Cập nhật OBSERVER (đầu ra sdk.summarize)
+    last_error: Optional[str]               # EXECUTOR ghi khi returncode != 0
 
-    # --- Score-based stopping ---
+    # --- Dừng dựa trên điểm số ---
     coverage_score: float                   # verified_targets / total_targets (0.0–1.0)
-    confidence_score: float                 # mean confidence score (0.0–1.0)
+    confidence_score: float                 # điểm tin cậy trung bình (0.0–1.0)
 
-    # --- Results ---
-    results: Optional[List[Any]]            # Final results
+    # --- Kết quả ---
+    results: Optional[List[Any]]            # Kết quả cuối cùng
     is_complete: bool
     stop_reason: Optional[str]              # "success" | "max_turns" | "error"
 
-    # --- Metrics ---
+    # --- Số liệu ---
     total_sdk_calls: int
     total_tokens: int
     cost_usd: float
 
-    # --- Control flags ---
-    _pending_code: Optional[str]            # Passes code from REASONER to EXECUTOR
+    # --- Cờ điều khiển ---
+    _pending_code: Optional[str]            # Truyền code từ REASONER sang EXECUTOR
