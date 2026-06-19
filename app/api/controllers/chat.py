@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
@@ -11,6 +12,7 @@ from app.models.user import User
 from app.schemas.dto.chat import ChatStreamRequest
 from app.services.chat.providers import ChatCompletionProvider, OpenAIChatCompletionProvider
 from app.services.chat.stream import ChatStreamService
+from app.services.chat.stream_state import stream_state_manager
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -52,3 +54,14 @@ async def stream_chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/stream/{run_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_chat_stream(
+    run_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Đánh dấu hủy một luồng stream đang hoạt động từ xa (phân tán).
+    """
+    stream_state_manager.flag_cancellation(run_id)

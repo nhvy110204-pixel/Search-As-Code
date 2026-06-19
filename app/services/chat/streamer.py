@@ -13,6 +13,7 @@ from app.observability.metrics import (
     record_chat_stream_failed,
 )
 from app.services.chat.providers import ChatCompletionProvider
+from app.services.chat.stream_state import stream_state_manager
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class ChatStreamer:
         on_complete: Callable,
         on_error: Callable,
         on_timeout: Callable,
+        run_id: uuid.UUID | None = None,  # Thêm run_id cho việc kiểm tra cờ hủy từ xa
     ) -> AsyncIterator[dict[str, str]]:
         event_id = 1
         started_at = time.perf_counter()
@@ -53,6 +55,23 @@ class ChatStreamer:
                     on_error("disconnected", "Client disconnected before stream completion")
                     record_chat_stream_disconnected(time.perf_counter() - started_at)
                     return
+
+                # Kiểm tra cờ hủy phân tán từ Redis
+                if run_id:
+                    if stream_state_manager.is_cancelled(run_id):
+                        logger.info(f"Ngắt luồng stream sớm do nhận được tín hiệu hủy: run_id={run_id}")
+                        content = "".join(content_parts)
+                        on_error("cancelled", "Stream cancelled by user")
+                        yield self._create_event(
+                            event_id,
+                            "error",
+                            {
+                                "message_id": str(assistant_message_id),
+                                "code": "cancelled",
+                                "message": "Stream cancelled by user",
+                            },
+                        )
+                        return
 
                 if chunk.prompt_tokens:
                     prompt_tokens = chunk.prompt_tokens

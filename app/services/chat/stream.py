@@ -244,6 +244,7 @@ class ChatStreamService:
             on_complete,
             on_error,
             on_timeout,
+            run_id=prepared.run_id,
         ):
             yield event
 
