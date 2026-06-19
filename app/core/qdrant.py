@@ -47,6 +47,15 @@ class QdrantManager:
                 collection_name=settings.QDRANT_COLLECTION_MEMORIES,
                 vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
             )
+        
+        # Khởi tạo collection cho Semantic Cache nếu chưa tồn tại
+        try:
+            self._client.get_collection(settings.QDRANT_COLLECTION_SEMANTIC_CACHE)
+        except Exception:
+            self._client.create_collection(
+                collection_name=settings.QDRANT_COLLECTION_SEMANTIC_CACHE,
+                vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+            )
     
     def upsert_vector(
         self,

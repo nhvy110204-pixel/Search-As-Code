@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: Optional[str] = None
     QDRANT_COLLECTION_CHUNKS: str = "document_chunks"
     QDRANT_COLLECTION_MEMORIES: str = "user_memories"
+    
+    # Cấu hình Semantic Cache (Qdrant + Redis)
+    QDRANT_COLLECTION_SEMANTIC_CACHE: str = "semantic_cache"
+    SEMANTIC_CACHE_THRESHOLD: float = 0.92
+    SEMANTIC_CACHE_TTL: int = 604800  # Thời gian lưu cache (7 ngày)
 
     @property
     def DATABASE_URL(self) -> str:

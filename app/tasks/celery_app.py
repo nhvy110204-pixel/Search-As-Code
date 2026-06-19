@@ -5,7 +5,10 @@ celery_app = Celery(
     "ragflash_backend",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.ingestion_tasks"]
+    include=[
+        "app.tasks.ingestion_tasks",
+        "app.tasks.chat_tasks"  # Tách biệt tác vụ Chat và Cache
+    ]
 )
 
 celery_app.conf.update(
@@ -18,6 +21,16 @@ celery_app.conf.update(
     task_routes={
         "app.tasks.ingestion_tasks.ingest_document": {"queue": settings.CELERY_INGESTION_QUEUE},
         "app.tasks.ingestion_tasks.reembed_failed_chunks": {"queue": settings.CELERY_INGESTION_QUEUE},
+        "app.tasks.chat_tasks.save_semantic_cache": {"queue": settings.CELERY_INGESTION_QUEUE},
+        "app.tasks.chat_tasks.cleanup_semantic_cache_orphans": {"queue": settings.CELERY_INGESTION_QUEUE},
+    },
+    
+    # Định kỳ dọn dẹp vector mồ côi trên Qdrant hàng ngày (mỗi 24h)
+    beat_schedule={
+        "cleanup-semantic-cache-orphans": {
+            "task": "app.tasks.chat_tasks.cleanup_semantic_cache_orphans",
+            "schedule": 86400.0,  # 86400 giây = 24 giờ
+        }
     },
     
     task_default_retry_delay=60,

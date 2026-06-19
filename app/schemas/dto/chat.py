@@ -26,3 +26,4 @@ class PreparedChatStream:
     replay_content: str | None = None
     replay_prompt_tokens: int = 0
     replay_completion_tokens: int = 0
+    query_hash: Optional[str] = None  

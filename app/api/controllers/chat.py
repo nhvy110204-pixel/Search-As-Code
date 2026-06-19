@@ -40,7 +40,7 @@ async def stream_chat(
     current_user: User = Depends(get_current_user),
     service: ChatStreamService = Depends(get_chat_stream_service),
 ):
-    prepared = service.prepare_stream(payload, current_user)
+    prepared = await service.prepare_stream(payload, current_user)
 
     return EventSourceResponse(
         service.stream_events(prepared, request.is_disconnected),

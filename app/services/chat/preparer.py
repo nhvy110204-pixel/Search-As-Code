@@ -71,6 +71,66 @@ class ChatStreamPreparer:
 
             return user_message, assistant_message
 
+    def prepare_messages_for_cache_hit(
+        self,
+        session_id: uuid.UUID,
+        parent_id: uuid.UUID | None,
+        content: str,
+        user_id: uuid.UUID,
+        cached_content: str,
+    ) -> tuple[ChatMessage, ChatMessage]:
+        """
+        Chuẩn bị và lưu trực tiếp tin nhắn User và Assistant vào database ở trạng thái COMPLETED
+        khi trúng Semantic Cache (Bypass qua OpenAI).
+        """
+        with UnitOfWork(self.db) as uow:
+            chat_session = uow.chat_sessions.get(session_id)
+            if not chat_session:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Không tìm thấy phiên chat"
+                )
+            if chat_session.user_id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Phiên chat không thuộc về người dùng hiện tại"
+                )
+
+            if parent_id:
+                parent = uow.chat_messages.get(parent_id)
+                if not parent or parent.session_id != session_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Tin nhắn cha không hợp lệ"
+                    )
+
+            # Tạo tin nhắn của User dạng COMPLETED
+            user_message = uow.chat_messages.create(
+                ChatMessageCreate(
+                    session_id=session_id,
+                    parent_id=parent_id,
+                    role=MessageRole.USER,
+                    content=content,
+                )
+            )
+            uow.chat_messages.update(user_message, {"status": MessageStatus.COMPLETED})
+
+            # Tạo tin nhắn phản hồi của Assistant dạng COMPLETED chứa dữ liệu cache
+            assistant_message = uow.chat_messages.create(
+                ChatMessageCreate(
+                    session_id=session_id,
+                    parent_id=user_message.id,
+                    role=MessageRole.ASSISTANT,
+                    content=cached_content,
+                )
+            )
+            uow.chat_messages.update(assistant_message, {"status": MessageStatus.COMPLETED})
+
+            # Xóa cache lịch sử cũ để cập nhật lịch sử chat mới
+            redis_cache_service.invalidate_history(session_id)
+
+            return user_message, assistant_message
+
     def build_provider_messages(
         self,
         session_id: uuid.UUID,

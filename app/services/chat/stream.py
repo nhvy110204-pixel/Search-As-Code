@@ -3,6 +3,8 @@
 import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, sessionmaker
@@ -57,7 +59,7 @@ class ChatStreamService:
         self.outcome = ChatStreamOutcomeHandler(session_factory, self.stream_run_repo)
 
     @service_boundary("Prepare Chat Stream")
-    def prepare_stream(self, payload: ChatStreamRequest, user: User) -> PreparedChatStream:
+    async def prepare_stream(self, payload: ChatStreamRequest, user: User) -> PreparedChatStream:
         content = payload.message.strip()
         self.validator.validate_message(content)
 
@@ -76,6 +78,51 @@ class ChatStreamService:
             )
 
         self.validator.enforce_rate_limits(user.id)
+
+        # Kiểm tra Semantic Cache (Lock và đọc cache)
+        from app.services.chat.semantic_cache import semantic_cache
+        from blake3 import blake3
+        
+        query_hash = blake3(content.encode("utf-8")).hexdigest()
+        cached_answer, lock_acquired = await semantic_cache.get_or_lock(content)
+        
+        if cached_answer:
+            # Cache Hit: Tạo nhanh tin nhắn ở trạng thái COMPLETED trong DB
+            user_message, assistant_message = self.preparer.prepare_messages_for_cache_hit(
+                payload.session_id,
+                payload.parent_id,
+                content,
+                user.id,
+                cached_answer["content"]
+            )
+            
+            run = self._create_stream_run_for_cache_hit(
+                user.id,
+                payload.session_id,
+                payload.client_request_id,
+                user_message.id,
+                assistant_message.id,
+                content,
+                payload.parent_id,
+            )
+            
+            logger.info(
+                f"Semantic Cache Hit hoàn tất: session_id={payload.session_id}, user_id={user.id}"
+            )
+            
+            return PreparedChatStream(
+                run_id=run.id,
+                user_id=user.id,
+                session_id=payload.session_id,
+                user_message_id=user_message.id,
+                assistant_message_id=assistant_message.id,
+                messages=[],
+                client_request_id=payload.client_request_id,
+                replay_content=cached_answer["content"],
+                replay_prompt_tokens=cached_answer.get("prompt_tokens", 0),
+                replay_completion_tokens=cached_answer.get("completion_tokens", 0),
+                query_hash=query_hash
+            )
 
         user_message, assistant_message = self.preparer.prepare_messages(
             payload.session_id,
@@ -113,6 +160,7 @@ class ChatStreamService:
             assistant_message_id=assistant_message.id,
             messages=messages,
             client_request_id=payload.client_request_id,
+            query_hash=query_hash if lock_acquired else None
         )
 
     async def stream_events(
@@ -148,6 +196,17 @@ class ChatStreamService:
                 started_at_,
                 first_delta_at,
             )
+            # Nếu request này giữ lock ghi cache, gọi Celery task lưu cache dưới nền
+            if prepared.query_hash:
+                from app.tasks.chat_tasks import save_semantic_cache
+                query = prepared.messages[-1]["content"] if prepared.messages else ""
+                save_semantic_cache.delay(
+                    query=query,
+                    content=content,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    query_hash=prepared.query_hash
+                )
 
         def on_error(error_code: str, error_message: str):
             self.outcome.mark_failed(
@@ -158,6 +217,10 @@ class ChatStreamService:
                 started_at or 0,
                 None,
             )
+            # Giải phóng lock nếu luồng sinh bị lỗi
+            if prepared.query_hash:
+                from app.services.chat.semantic_cache import semantic_cache
+                semantic_cache.release_lock(prepared.query_hash)
 
         def on_timeout(content: str, started_at_: float, first_delta_at: float | None):
             self.outcome.mark_failed(
@@ -168,6 +231,10 @@ class ChatStreamService:
                 started_at_,
                 first_delta_at,
             )
+            # Giải phóng lock nếu luồng sinh bị timeout
+            if prepared.query_hash:
+                from app.services.chat.semantic_cache import semantic_cache
+                semantic_cache.release_lock(prepared.query_hash)
 
         async for event in self.streamer.stream_events(
             prepared.messages,
@@ -199,6 +266,34 @@ class ChatStreamService:
             status=ChatStreamStatus.STREAMING,
             model_name=settings.CHAT_MODEL_NAME,
             metadata_=self.idempotency.create_run_metadata(content, parent_id),
+        )
+        self.db.add(run)
+        self.db.flush()
+        self.db.refresh(run)
+        return run
+
+    def _create_stream_run_for_cache_hit(
+        self,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        client_request_id: str | None,
+        user_message_id: uuid.UUID,
+        assistant_message_id: uuid.UUID,
+        content: str,
+        parent_id: uuid.UUID | None,
+    ) -> ChatStreamRun:
+        """Tạo đối tượng ChatStreamRun ở trạng thái COMPLETED khi trúng Semantic Cache."""
+        run = ChatStreamRun(
+            user_id=user_id,
+            session_id=session_id,
+            client_request_id=client_request_id,
+            user_message_id=user_message_id,
+            assistant_message_id=assistant_message_id,
+            status=ChatStreamStatus.COMPLETED,
+            model_name=settings.CHAT_MODEL_NAME,
+            metadata_=self.idempotency.create_run_metadata(content, parent_id),
+            completed_at=datetime.now(timezone.utc),
+            duration_ms=0,
         )
         self.db.add(run)
         self.db.flush()
