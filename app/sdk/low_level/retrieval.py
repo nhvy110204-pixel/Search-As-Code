@@ -156,6 +156,30 @@ async def retrieve(
             duration_ms=duration_ms
         )
 
+        # Write to STATE_DIR if available for graph validators
+        state_dir_str = os.environ.get("STATE_DIR")
+        turn_number_str = os.environ.get("TURN_NUMBER", "1")
+        if state_dir_str:
+            try:
+                import json
+                from pathlib import Path
+                state_dir = Path(state_dir_str)
+                hits_file = state_dir / f"retrieved_hits_turn_{turn_number_str}.json"
+                hits_data = [
+                    {
+                        "id": h.id,
+                        "title": h.title,
+                        "content": h.content,
+                        "url": h.url,
+                        "score": h.score,
+                        "metadata": h.metadata
+                    } for h in hits
+                ]
+                hits_file.write_text(json.dumps(hits_data))
+            except Exception as e:
+                import sys
+                print(f"Error writing retrieved hits to state dir: {e}", file=sys.stderr)
+
     return hits
 
 async def fanout(

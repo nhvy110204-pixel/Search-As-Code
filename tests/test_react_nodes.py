@@ -1,12 +1,14 @@
 import pytest
 import shutil
 import tempfile
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch, MagicMock
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from app.graph.state.agent_state import AgentState, TurnSummary
 from app.graph.nodes.planner import planner_node
 from app.graph.nodes.reasoner import reasoner_node, build_working_memory, _extract_code_block
+from app.graph.nodes.execution_validator import execution_validator_node
 
 def test_extract_code_block():
     # Test valid python block
@@ -134,3 +136,62 @@ results = await sdk.retrieve("CVE-2023-38606")
     assert len(res["messages"]) == 1
     assert isinstance(res["messages"][0], AIMessage)
     assert "I will search for the requested CVEs now." in res["messages"][0].content
+
+
+@pytest.mark.anyio
+async def test_execution_validator_node_pass_through_on_failed_execution():
+    state = {
+        "current_turn": 1,
+        "turns": [
+            {
+                "turn_number": 1,
+                "generated_code": "print('hello')",
+                "stdout": "",
+                "stderr": "ValueError: sandbox crash",
+                "returncode": 1,
+                "sdk_calls": 0,
+                "state_files": []
+            }
+        ]
+    }
+    res = await execution_validator_node(state)
+    assert res == {}  # Verify clean pass-through
+
+
+@pytest.mark.anyio
+async def test_execution_validator_node_calculates_scores():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        state_dir = Path(tmp_dir)
+        hits_file = state_dir / "retrieved_hits_turn_1.json"
+        hits_file.write_text(json.dumps([
+            {"id": "hit1", "title": "Doc1", "content": "Text", "score": 0.8}
+        ]))
+        
+        completion_file = state_dir / "completion_signal.json"
+        completion_file.write_text(json.dumps({
+            "is_complete": True,
+            "coverage_score": 0.95,
+            "confidence_score": 0.9
+        }))
+        
+        state = {
+            "current_turn": 1,
+            "state_dir": tmp_dir,
+            "coverage_score": 0.0,
+            "confidence_score": 0.0,
+            "turns": [
+                {
+                    "turn_number": 1,
+                    "generated_code": "sdk.retrieve()",
+                    "returncode": 0,
+                    "sdk_calls": 1
+                }
+            ]
+        }
+        
+        res = await execution_validator_node(state)
+        assert res["evidence_count"] == 1
+        assert res["retrieval_score"] == 0.8
+        assert res["coverage_score"] == 0.95
+        assert res["confidence_score"] == 0.9
+        assert res["is_complete"] is True

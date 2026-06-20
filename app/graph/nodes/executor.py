@@ -1,19 +1,27 @@
 from typing import Any
 from langchain_core.messages import HumanMessage
 from app.graph.state.agent_state import AgentState, TurnRecord, TurnSummary
-from app.core.sandbox import SandboxExecutor, validate_code
+from app.guardrails.sandbox import SandboxExecutor, validate_code
 from app.core.database import SessionLocal
 from app.models.sdk_operation import SDKOperation
 from sqlalchemy import select, func
 from pathlib import Path
 import os
 
-async def executor_node(state: AgentState) -> AgentState:
+async def executor_node(state: AgentState) -> dict:
     """
     Node ACT: AST-validate rồi execute model-generated code trong sandbox.
     Build compact TurnSummary để REASONER dùng làm working memory.
     """
     code = state.get("_pending_code", "") or ""
+    if not code:
+        # Reasoner did not generate code, meaning it wants to finish.
+        # Pass through without incrementing current_turn.
+        return {
+            "is_complete": True,
+            "_pending_code": None
+        }
+        
     turn_num = state.get("current_turn", 0) + 1
     state_dir = Path(state["state_dir"])
 

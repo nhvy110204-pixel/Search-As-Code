@@ -12,23 +12,23 @@ from app.shared.enums import MemoryType
 
 logger = logging.getLogger(__name__)
 
-async def extractor_node(state: AgentState) -> dict:
+async def memory_extractor_node(state: AgentState) -> dict:
     """
-    Node Extractor: Đánh giá các vòng thực thi để trích xuất các sự kiện vĩnh cửu,
-    sở thích người dùng, và lưu chúng vào Bộ nhớ dài hạn (LTM).
-    Chạy như giai đoạn cuối cùng của vòng lặp LangGraph trước END.
+    Memory Extractor Node: Analyzes the execution turns history to extract
+    permanent facts and user preferences, then stores them in LTM.
+    Runs as the final stage of the LangGraph execution loop before END.
     """
     user_id = state.get("user_id")
     if not user_id:
-        logger.info("Không tìm thấy user_id trong AgentState. Bỏ qua trích xuất bộ nhớ.")
+        logger.info("No user_id found in AgentState. Skipping memory extraction.")
         return {}
 
     turn_summaries = state.get("turn_summaries", [])
     if not turn_summaries:
-        logger.info("Không có vòng thực thi nào được ghi lại. Bỏ qua trích xuất bộ nhớ.")
+        logger.info("No execution turns recorded. Skipping memory extraction.")
         return {}
 
-    # 1. Biên dịch lịch sử tóm tắt cho ngữ cảnh LLM
+    # 1. Compile summary history for LLM context
     history_lines = []
     for ts in turn_summaries:
         history_lines.append(f"Turn {ts['turn']}:")
@@ -36,7 +36,7 @@ async def extractor_node(state: AgentState) -> dict:
         history_lines.append(f"  Outcome: {ts['outcome']}")
     history_text = "\n".join(history_lines)
 
-    # 2. System prompt và hướng dẫn con người để trích xuất
+    # 2. System prompt and human instructions for extraction
     system_prompt = (
         "You are an AI Memory Extractor. Your role is to analyze the execution history of a "
         "Search-as-Code agent and extract permanent facts or user preferences that should be "
@@ -60,7 +60,7 @@ Example output format:
 ["User prefers using pure python urllib rather than third-party requests library.", "The development API endpoint is configured on port 8000."]
 """
 
-    # 3. Gọi LLM để trích xuất bộ nhớ
+    # 3. Call LLM to extract memories
     llm = ChatOpenAI(
         api_key=settings.OPENAI_API_KEY,
         model=settings.CHAT_MODEL_NAME,
@@ -76,18 +76,18 @@ Example output format:
     try:
         response = await llm.ainvoke(messages)
         content = (response.content or "").strip()
-        # Xóa các markdown code fence vô tình
+        # Clean any accidental markdown fences
         clean_content = content.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         if clean_content:
             parsed = json.loads(clean_content)
             if isinstance(parsed, list):
                 extracted_memories = [str(item) for item in parsed]
     except Exception as e:
-        logger.error("Không thể trích xuất bộ nhớ bằng LLM: %s", str(e), exc_info=True)
+        logger.error("Failed to extract memory via LLM: %s", str(e), exc_info=True)
 
-    # 4. Lưu bộ nhớ đã trích xuất vào PostgreSQL & Qdrant
+    # 4. Save extracted memories to PostgreSQL & Qdrant
     if extracted_memories:
-        logger.info("Đã trích xuất %d bộ nhớ mới cho người dùng %s", len(extracted_memories), user_id)
+        logger.info("Extracted %d new memories for user %s", len(extracted_memories), user_id)
         db = SessionLocal()
         try:
             user_uuid = uuid.UUID(str(user_id))
@@ -100,11 +100,11 @@ Example output format:
                 )
             db.commit()
         except Exception as e:
-            logger.error("Không thể lưu bộ nhớ đã trích xuất vào cơ sở dữ liệu: %s", str(e), exc_info=True)
+            logger.error("Failed to save extracted memories to DB: %s", str(e), exc_info=True)
             db.rollback()
         finally:
             db.close()
     else:
-        logger.info("Không có bộ nhớ mới nào được trích xuất cho người dùng %s", user_id)
+        logger.info("No new memories extracted for user %s", user_id)
 
     return {}

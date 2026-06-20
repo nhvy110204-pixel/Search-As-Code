@@ -9,7 +9,7 @@ from app.models.user import User
 from app.models.user_memory import UserMemory
 from app.shared.enums import MemoryType
 from app.services.agent.memory_service import MemoryService
-from app.graph.nodes.extractor import extractor_node
+from app.graph.nodes.memory_extractor import memory_extractor_node
 from app.graph.graphs.agent_graph import agent_graph
 
 @pytest.fixture
@@ -85,7 +85,7 @@ async def test_save_and_recall_memory(mock_upsert, mock_embed, db_session, test_
 
 
 @pytest.mark.anyio
-@patch("app.graph.nodes.extractor.ChatOpenAI")
+@patch("app.graph.nodes.memory_extractor.ChatOpenAI")
 @patch("app.services.agent.memory_service.embed")
 async def test_extractor_node_saves_memories(mock_embed, mock_chat_openai, db_session, test_user):
     # Mock SDK embedding
@@ -110,7 +110,7 @@ async def test_extractor_node_saves_memories(mock_embed, mock_chat_openai, db_se
     }
     
     # Execute extractor node
-    await extractor_node(state)
+    await memory_extractor_node(state)
     
     # Verify that memories are persisted into PostgreSQL
     db_records = db_session.scalars(
@@ -130,7 +130,7 @@ async def test_extractor_node_saves_memories(mock_embed, mock_chat_openai, db_se
 
 @pytest.mark.anyio
 @patch("app.graph.nodes.reasoner.ChatOpenAI")
-@patch("app.graph.nodes.extractor.ChatOpenAI")
+@patch("app.graph.nodes.memory_extractor.ChatOpenAI")
 @patch("app.services.agent.memory_service.embed")
 async def test_agent_graph_full_memory_loop(mock_embed, mock_extractor_llm, mock_reasoner_llm, db_session, test_user):
     # Mock embeddings

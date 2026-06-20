@@ -3,39 +3,59 @@ from app.graph.state.agent_state import AgentState
 from app.graph.nodes.planner import planner_node
 from app.graph.nodes.reasoner import reasoner_node
 from app.graph.nodes.executor import executor_node
-from app.graph.nodes.extractor import extractor_node
-from app.graph.edges.conditions import should_continue
+from app.graph.nodes.execution_validator import execution_validator_node
+from app.graph.nodes.observer import observer_node
+from app.graph.nodes.finalizer import finalizer_node
+from app.graph.nodes.citation_validator import citation_validator_node
+from app.graph.nodes.memory_extractor import memory_extractor_node
+from app.graph.edges.conditions import should_continue, check_citation_status
 
 def build_agent_graph(checkpointer=None):
     """
-    Xây dựng LangGraph StateGraph cho Search-as-Code (SaC) ReAct loop.
+    Builds the LangGraph StateGraph for the Search-as-Code (SaC) ReAct loop
+    with production refactoring, execution validation, and citation self-correction loops.
     """
     workflow = StateGraph(AgentState)
     
-    # Đăng ký các node
+    # 1. Register nodes
     workflow.add_node("planner", planner_node)
     workflow.add_node("reasoner", reasoner_node)
     workflow.add_node("executor", executor_node)
-    workflow.add_node("extractor", extractor_node)
+    workflow.add_node("execution_validator", execution_validator_node)
+    workflow.add_node("observer", observer_node)
+    workflow.add_node("finalizer", finalizer_node)
+    workflow.add_node("citation_validator", citation_validator_node)
+    workflow.add_node("memory_extractor", memory_extractor_node)
     
-    # Định nghĩa các chuyển đổi
+    # 2. Wire connections
     workflow.add_edge(START, "planner")
     workflow.add_edge("planner", "reasoner")
+    workflow.add_edge("reasoner", "executor")
+    workflow.add_edge("executor", "execution_validator")
+    workflow.add_edge("execution_validator", "observer")
     
-    # Thêm định tuyến có điều kiện sau node Reasoner
+    # Conditional routing from Observer to Reasoner or Finalizer
     workflow.add_conditional_edges(
-        "reasoner",
+        "observer",
         should_continue,
         {
-            "execute": "executor",
-            "end": "extractor"
+            "reasoner": "reasoner",
+            "finalizer": "finalizer"
         }
     )
     
-    # Quay lại Reasoner sau khi thực thi hoàn tất
-    workflow.add_edge("executor", "reasoner")
+    workflow.add_edge("finalizer", "citation_validator")
     
-    # Liên kết node extractor với trạng thái END
-    workflow.add_edge("extractor", END)
+    # Conditional routing from Citation Validator to Finalizer (correction loop) or Memory Extractor (done)
+    workflow.add_conditional_edges(
+        "citation_validator",
+        check_citation_status,
+        {
+            "finalizer": "finalizer",
+            "memory_extractor": "memory_extractor"
+        }
+    )
+    
+    workflow.add_edge("memory_extractor", END)
     
     return workflow.compile(checkpointer=checkpointer)

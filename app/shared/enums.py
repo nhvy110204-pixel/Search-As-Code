@@ -86,3 +86,39 @@ class MemoryType(str, enum.Enum):
     FACT = "fact"               # Sự thật trích xuất được (VD: Khách hàng đang dùng Mac M3)
     SUMMARY = "summary"         # Tóm tắt của một Chat Session cũ đã đóng để lưu vết kiến thức
     PREFERENCE = "preference"   # Thói quen học máy tự động đúc rút từ hành vi người dùng
+
+class StopReason(str, enum.Enum):
+    # Success
+    COMPLETED = "completed"
+
+    # Input
+    OUT_OF_SCOPE = "out_of_scope"
+    INVALID_INPUT = "invalid_input"
+    GIBBERISH = "gibberish"
+    USER_CANCELLED = "user_cancelled"
+
+    # Safety
+    PROMPT_INJECTION = "prompt_injection"
+    SAFETY_VIOLATION = "safety_violation"
+
+    # Evidence
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    EVIDENCE_QUALITY_LOW = "evidence_quality_low"
+    LOW_CONFIDENCE = "low_confidence"
+
+    # Agent Quality
+    STAGNATED = "stagnated"
+    SEARCH_PLAN_FAILED = "search_plan_failed"
+    HALLUCINATION_DETECTED = "hallucination_detected"
+    CITATION_VALIDATION_FAILED = "citation_validation_failed"
+
+    # Resource Limits
+    MAX_TURNS_REACHED = "max_turns_reached"
+    BUDGET_EXCEEDED = "budget_exceeded"
+    CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
+    TIMEOUT = "timeout"
+
+    # Infrastructure
+    RETRIEVAL_FAILURE = "retrieval_failure"
+    REPEATED_TOOL_FAILURES = "repeated_tool_failures"
+    INTERNAL_ERROR = "internal_error"

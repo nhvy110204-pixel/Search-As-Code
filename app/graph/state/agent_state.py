@@ -2,6 +2,15 @@ from typing import TypedDict, Annotated, List, Optional, Any
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
 import operator
+from dataclasses import dataclass
+from app.shared.enums import StopReason
+
+@dataclass
+class ErrorInfo:
+    error_type: Optional[str] = None
+    error_message: Optional[str] = None
+    node_name: Optional[str] = None
+    retry_count: int = 0
 
 class TurnRecord(TypedDict):
     turn_number: int
@@ -25,6 +34,7 @@ class AgentState(TypedDict):
     task_id: str
     directive: str                          # Chỉ thị nhiệm vụ gốc
     user_id: Optional[str]                  # ID duy nhất của người dùng (để cô lập bộ nhớ)
+    project_id: Optional[str]              # ID của dự án (để liệt kê tài liệu, lọc nguồn)
     domain_context: Optional[str]           # Kiến thức miền
     constraints: List[str]                  # Các ràng buộc nhiệm vụ
 
@@ -48,11 +58,19 @@ class AgentState(TypedDict):
     # --- Dừng dựa trên điểm số ---
     coverage_score: float                   # verified_targets / total_targets (0.0–1.0)
     confidence_score: float                 # điểm tin cậy trung bình (0.0–1.0)
+    evidence_count: int
+    retrieval_score: float
+    low_retrieval_counter: int
+    stagnation_counter: int
 
     # --- Kết quả ---
     results: Optional[List[Any]]            # Kết quả cuối cùng
+    final_answer: Optional[str]
+    unverified_claims: Optional[List[str]]
+    citation_retry_counter: int
     is_complete: bool
-    stop_reason: Optional[str]              # "success" | "max_turns" | "error"
+    stop_reason: Optional[StopReason]
+    error_info: Optional[ErrorInfo]
 
     # --- Số liệu ---
     total_sdk_calls: int

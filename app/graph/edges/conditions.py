@@ -2,18 +2,21 @@ from app.graph.state.agent_state import AgentState
 
 def should_continue(state: AgentState) -> str:
     """
-    Quyết định xem có nên tiếp tục thực thi hay dừng lại.
-    Trả về "execute" nếu có code để chạy, hoặc "end" nếu việc thực thi đã hoàn tất
-    hoặc đã đạt đến số vòng tối đa.
+    Observer node conditional routing logic.
+    Returns "finalizer" if graph is complete or error/turn limit is reached.
+    Otherwise returns "reasoner" to perform another search turn.
     """
-    # Nếu không có code đang chờ được đề xuất bởi Reasoner, dừng đồ thị.
-    if not state.get("_pending_code"):
-        return "end"
-    
-    # Nếu chúng ta đã đạt hoặc vượt quá số vòng tối đa cho phép
-    current_turn = state.get("current_turn", 0)
-    max_turns = state.get("max_turns", 10)
-    if current_turn >= max_turns:
-        return "end"
+    if state.get("is_complete") or state.get("stop_reason"):
+        return "finalizer"
         
-    return "execute"
+    return "reasoner"
+
+def check_citation_status(state: AgentState) -> str:
+    """
+    Conditional routing after citation validation.
+    If unverified claims exist (i.e. validation failed), route back to finalizer.
+    Otherwise, proceed to memory_extractor.
+    """
+    if state.get("unverified_claims"):
+        return "finalizer"
+    return "memory_extractor"

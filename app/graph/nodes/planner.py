@@ -126,11 +126,20 @@ async def planner_node(state: AgentState) -> dict:
         "turn_summaries": state.get("turn_summaries") or [],
         "coverage_score": state.get("coverage_score") or 0.0,
         "confidence_score": state.get("confidence_score") or 0.0,
+        "evidence_count": 0,
+        "retrieval_score": 0.0,
+        "low_retrieval_counter": 0,
+        "stagnation_counter": 0,
+        "final_answer": None,
+        "unverified_claims": None,
+        "citation_retry_counter": 0,
+        "error_info": None,
         "total_sdk_calls": state.get("total_sdk_calls") or 0,
         "total_tokens": state.get("total_tokens") or 0,
         "cost_usd": state.get("cost_usd") or 0.0,
         "is_complete": state.get("is_complete") or False,
         "_pending_code": None,
         "messages": messages,
-        "user_id": str(user_id) if user_id else None
+        "user_id": str(user_id) if user_id else None,
+        "project_id": str(state.get("project_id")) if state.get("project_id") else None
     }

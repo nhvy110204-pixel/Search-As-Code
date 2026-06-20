@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from pathlib import Path
-from app.core.sandbox import validate_code, SandboxExecutor, ExecutionResult
+from app.guardrails.sandbox import validate_code, SandboxExecutor, ExecutionResult
 
 def test_ast_validation_allowed():
     # Allowed imports and calls
