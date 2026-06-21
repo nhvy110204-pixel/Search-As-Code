@@ -57,7 +57,7 @@ def log_sdk_operation(
 
 async def retrieve(
     query: str,
-    source: str = "web",   # "web" | "index" | "embedding_store"
+    source: str = "index",   # Default to index for MVP. "web" is disabled.
     limit: int = 10
 ) -> List[SearchHit]:
     """Atomic single-source retrieval. Queries Qdrant or simulated web search."""
@@ -65,7 +65,14 @@ async def retrieve(
     hits = []
 
     try:
-        if source in {"index", "embedding_store"}:
+        # Check source. Web search is temporarily disabled for MVP.
+        # If source is "web", redirect it to "index" for document-only search.
+        effective_source = source
+        if source == "web":
+            # Web search is temporarily commented out for post-MVP. We default to index search.
+            effective_source = "index"
+
+        if effective_source in {"index", "embedding_store"}:
             from app.rag.embeddings.manager import EmbeddingManager
             from app.core.qdrant import qdrant_manager
             from app.config.settings import settings
@@ -98,50 +105,50 @@ async def retrieve(
                 ))
 
         else:
-            # Simulated Web Search results based on keywords (for testing & offline reliability)
-            # Check for specific CVE or vendor keywords to return relevant mock security advisories
-            query_lower = query.lower()
-            if "cve-2023-38606" in query_lower or ("apple" in query_lower and "kernel" in query_lower):
-                hits = [
-                    SearchHit(
-                        id="web-cve-2023-38606-1",
-                        title="Apple Security Advisory: CVE-2023-38606 Exploit Patch",
-                        content="Apple has released security updates for iOS, iPadOS, macOS, and watchOS to address CVE-2023-38606, an actively exploited zero-day vulnerability in the kernel. This state-corruption flaw in the kernel allows a malicious application to modify sensitive kernel variables and bypass code signing checks.",
-                        url="https://support.apple.com/en-us/HT213841",
-                        score=0.98,
-                        metadata={"vendor": "apple", "severity": "critical"}
-                    ),
-                    SearchHit(
-                        id="web-cve-2023-38606-2",
-                        title="NVD CVE-2023-38606 Detail",
-                        content="NVD description: A validation issue was addressed with improved input sanitization. This issue is fixed in iOS 16.6 and iPadOS 16.6, macOS Ventura 13.5. An app may be able to modify sensitive kernel state. Apple is aware of a report that this issue may have been actively exploited.",
-                        url="https://nvd.nist.gov/vuln/detail/CVE-2023-38606",
-                        score=0.95,
-                        metadata={"vendor": "nvd", "severity": "high"}
-                    )
-                ]
-            elif "cve" in query_lower:
-                hits = [
-                    SearchHit(
-                        id="web-generic-cve",
-                        title="CVE Vulnerability database reference",
-                        content="Generic vulnerability reference. Common Vulnerabilities and Exposures (CVE) is a dictionary of common names for publicly known cybersecurity vulnerabilities.",
-                        url="https://cve.mitre.org",
-                        score=0.8
-                    )
-                ]
-            else:
-                # General search results
-                hits = [
-                    SearchHit(
-                        id=f"web-generic-{i}",
-                        title=f"Search result for: {query[:30]}",
-                        content=f"This is a simulated web search result containing relevant content for query: {query}",
-                        url=f"https://example.com/search?q={query[:10]}",
-                        score=0.75 - (i * 0.05)
-                    )
-                    for i in range(min(limit, 3))
-                ]
+            # Simulated Web Search results commented out for post-MVP.
+            pass
+            # query_lower = query.lower()
+            # if "cve-2023-38606" in query_lower or ("apple" in query_lower and "kernel" in query_lower):
+            #     hits = [
+            #         SearchHit(
+            #             id="web-cve-2023-38606-1",
+            #             title="Apple Security Advisory: CVE-2023-38606 Exploit Patch",
+            #             content="Apple has released security updates for iOS, iPadOS, macOS, and watchOS to address CVE-2023-38606, an actively exploited zero-day vulnerability in the kernel. This state-corruption flaw in the kernel allows a malicious application to modify sensitive kernel variables and bypass code signing checks.",
+            #             url="https://support.apple.com/en-us/HT213841",
+            #             score=0.98,
+            #             metadata={"vendor": "apple", "severity": "critical"}
+            #         ),
+            #         SearchHit(
+            #             id="web-cve-2023-38606-2",
+            #             title="NVD CVE-2023-38606 Detail",
+            #             content="NVD description: A validation issue was addressed with improved input sanitization. This issue is fixed in iOS 16.6 and iPadOS 16.6, macOS Ventura 13.5. An app may be able to modify sensitive kernel state. Apple is aware of a report that this issue may have been actively exploited.",
+            #             url="https://nvd.nist.gov/vuln/detail/CVE-2023-38606",
+            #             score=0.95,
+            #             metadata={"vendor": "nvd", "severity": "high"}
+            #         )
+            #     ]
+            # elif "cve" in query_lower:
+            #     hits = [
+            #         SearchHit(
+            #             id="web-generic-cve",
+            #             title="CVE Vulnerability database reference",
+            #             content="Generic vulnerability reference. Common Vulnerabilities and Exposures (CVE) is a dictionary of common names for publicly known cybersecurity vulnerabilities.",
+            #             url="https://cve.mitre.org",
+            #             score=0.8
+            #         )
+            #     ]
+            # else:
+            #     # General search results
+            #     hits = [
+            #         SearchHit(
+            #             id=f"web-generic-{i}",
+            #             title=f"Search result for: {query[:30]}",
+            #             content=f"This is a simulated web search result containing relevant content for query: {query}",
+            #             url=f"https://example.com/search?q={query[:10]}",
+            #             score=0.75 - (i * 0.05)
+            #         )
+            #         for i in range(min(limit, 3))
+            #     ]
 
         # Enforce limit
         hits = hits[:limit]
@@ -197,7 +204,8 @@ async def fanout(
     async def one_variant(variant: str) -> List[SearchHit]:
         async with semaphore:
             query = variant.format(q=base_query) if "{q}" in variant else f"{variant} {base_query}"
-            return await retrieve(query=query, source="web")
+            # Web search temporarily commented out/redirected to index for MVP
+            return await retrieve(query=query, source="index")
 
     results = await asyncio.gather(*[one_variant(v) for v in variants], return_exceptions=True)
     

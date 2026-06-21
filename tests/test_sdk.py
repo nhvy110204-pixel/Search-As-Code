@@ -76,23 +76,52 @@ def test_sdk_processing():
     assert deduped[1]["val"] == 2
 
 @pytest.mark.anyio
-async def test_sdk_low_level_retrieval(tmp_path):
-    # Test retrieve (web source)
-    hits = await sdk.retrieve("CVE-2023-38606 apple kernel", source="web", limit=2)
-    assert len(hits) == 2
-    assert hits[0].id == "web-cve-2023-38606-1"
-    assert "Apple Security Advisory" in hits[0].title
+@patch("app.core.qdrant.qdrant_manager.search_vectors")
+@patch("app.rag.embeddings.manager.EmbeddingManager.get_provider")
+async def test_sdk_low_level_retrieval(mock_get_provider, mock_search_vectors, tmp_path):
+    # Mock embedding provider
+    mock_provider = MagicMock()
+    mock_provider.embed_text = MagicMock(return_value=[0.1, 0.2, 0.3])
+    mock_get_provider.return_value = mock_provider
+
+    # Mock Qdrant results
+    mock_search_vectors.return_value = [
+        {
+            "embedding_id": "cve-1",
+            "score": 0.99,
+            "payload": {
+                "title": "Mock CVE Title",
+                "content": "Mock CVE content detail",
+                "url": "https://example.com/cve-1",
+                "document_id": "doc-123",
+                "project_id": "proj-456",
+                "chunk_index": 0
+            }
+        }
+    ]
+
+    # Test retrieve (index source)
+    hits = await sdk.retrieve("CVE-2023-38606 apple kernel", source="index", limit=2)
+    assert len(hits) == 1
+    assert hits[0].id == "cve-1"
+    assert "Mock CVE Title" in hits[0].title
+
+    # Test that source="web" redirects to "index"
+    hits_web = await sdk.retrieve("CVE-2023-38606 apple kernel", source="web", limit=2)
+    assert len(hits_web) == 1
+    assert hits_web[0].id == "cve-1"
 
     # Test fanout
     variants = [
         "CVE {q} details",
         "{q} kernel vulnerability"
     ]
-    fanout_hits = await sdk.fanout(base_query="CVE-2023-38606", variants=variants)
-    assert len(fanout_hits) > 0
-    # Duplicate IDs are filtered out
-    unique_ids = [h.id for h in fanout_hits]
-    assert len(unique_ids) == len(set(unique_ids))
+    with patch("app.sdk.low_level.retrieval.retrieve", new_callable=AsyncMock) as mock_ret:
+        mock_ret.return_value = [SearchHit(id="fan-1", title="F1", content="C1")]
+        fanout_hits = await sdk.fanout(base_query="CVE-2023-38606", variants=variants)
+        assert len(fanout_hits) > 0
+        unique_ids = [h.id for h in fanout_hits]
+        assert len(unique_ids) == len(set(unique_ids))
 
 @pytest.mark.anyio
 @patch("app.rag.embeddings.manager.EmbeddingManager.get_provider")
@@ -130,19 +159,31 @@ async def test_sdk_high_level_llm(mock_chat_create):
     assert extracted[0]["data"]["cve"] == "CVE-2023-38606"
 
 @pytest.mark.anyio
+@patch("app.sdk.low_level.retrieval.retrieve", new_callable=AsyncMock)
 @patch("app.sdk.high_level.llm.LLMSDK.query_llm", new_callable=AsyncMock)
-async def test_sdk_high_level_search(mock_query_llm):
+async def test_sdk_high_level_search(mock_query_llm, mock_retrieve):
     # Mock LLM query refinement
     mock_query_llm.return_value = "apple support CVE-2023-38606"
+
+    # Mock retrieve output
+    mock_hit = SearchHit(
+        id="cve-1",
+        title="Mock CVE Title",
+        content="Mock CVE content detail",
+        url="https://example.com/cve-1"
+    )
+    mock_retrieve.return_value = [mock_hit]
 
     # Test web_many
     queries = [{"query": "CVE-2023-38606"}, {"query": "apple kernel exploit"}]
     many_results = await sdk.search.web_many(queries, limit_per_query=2)
     assert len(many_results) == 2
     assert len(many_results[0]) > 0
+    assert many_results[0][0].id == "cve-1"
 
     # Test deep_search
     deep_results = await sdk.search.deep_search("CVE-2023-38606", depth=2)
     assert len(deep_results) > 0
+    assert deep_results[0].id == "cve-1"
     # Refinement LLM call is invoked
     mock_query_llm.assert_called_once()

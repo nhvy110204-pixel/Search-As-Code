@@ -1,0 +1,8 @@
+pydantic
+openai
+qdrant-client
+psycopg[binary]
+redis
+langchain-core
+tiktoken
+blake3

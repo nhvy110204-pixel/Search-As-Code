@@ -24,7 +24,8 @@ class SearchSDK:
         async def search_one(q: Dict) -> List[SearchHit]:
             async with semaphore:
                 query_str = q.get("query") if isinstance(q, dict) else str(q)
-                return await retrieve(query_str, source="web", limit=limit_per_query)
+                # Web search temporarily commented out/redirected to index for MVP
+                return await retrieve(query_str, source="index", limit=limit_per_query)
 
         results = await asyncio.gather(
             *[search_one(q) for q in queries],
@@ -65,8 +66,8 @@ class SearchSDK:
         current_query = query
 
         for d in range(depth):
-            # 1. Retrieve search results
-            hits = await retrieve(current_query, source="web", limit=5)
+            # 1. Retrieve search results (web search temporarily commented out/redirected to index for MVP)
+            hits = await retrieve(current_query, source="index", limit=5)
             all_hits.extend(hits)
             
             if d == depth - 1:

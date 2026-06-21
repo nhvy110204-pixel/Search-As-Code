@@ -131,3 +131,88 @@ async def test_executor_node_success(tmp_path):
     assert new_state["turns"][0]["returncode"] == 0
     assert "Hello World" in new_state["turns"][0]["stdout"]
     assert new_state["_pending_code"] is None
+
+@pytest.mark.anyio
+async def test_sandbox_executor_top_level_await(tmp_path):
+    executor = SandboxExecutor(task_id="test-task-top-level-await", state_dir=tmp_path)
+    code = """
+import asyncio
+await asyncio.sleep(0.01)
+print("Top-level await executed successfully!")
+"""
+    res = await executor.execute(code)
+    assert res.returncode == 0
+    assert "Top-level await executed successfully!" in res.stdout
+    assert not res.stderr
+
+def test_to_posix_mount_path():
+    from app.guardrails.sandbox import to_posix_mount_path
+    import sys
+    import os
+    # Windows style paths
+    assert to_posix_mount_path(r"C:\Users\test") == "/c/Users/test"
+    assert to_posix_mount_path(r"d:\Workspace\project") == "/d/Workspace/project"
+    # POSIX style paths
+    if sys.platform != "win32":
+        assert to_posix_mount_path("/home/user/app") == "/home/user/app"
+    else:
+        current_drive = os.path.splitdrive(os.path.abspath("/"))[0].lower().replace(":", "")
+        assert to_posix_mount_path("/home/user/app") == f"/{current_drive}/home/user/app"
+
+@pytest.mark.anyio
+async def test_sandbox_executor_docker(tmp_path):
+    import shutil
+    import subprocess
+    from app.config.settings import settings
+
+    # Check if Docker is installed and running
+    docker_available = shutil.which("docker") is not None
+    docker_running = False
+    if docker_available:
+        try:
+            res = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
+            docker_running = (res.returncode == 0)
+        except Exception:
+            pass
+
+    if not docker_running:
+        pytest.skip("Docker daemon is not available/running. Skipping Docker sandbox tests.")
+
+    # Check if image is built
+    image_exists = False
+    try:
+        res = subprocess.run(["docker", "image", "inspect", settings.SANDBOX_DOCKER_IMAGE], capture_output=True)
+        image_exists = (res.returncode == 0)
+    except Exception:
+        pass
+
+    if not image_exists:
+        pytest.skip(f"Docker image {settings.SANDBOX_DOCKER_IMAGE} not built. Skipping Docker sandbox execution test.")
+
+    # Force Docker runtime
+    original_runtime = settings.SANDBOX_RUNTIME
+    original_docker_runtime = settings.SANDBOX_DOCKER_RUNTIME
+    try:
+        settings.SANDBOX_RUNTIME = "docker"
+        settings.SANDBOX_DOCKER_RUNTIME = None
+        
+        executor = SandboxExecutor(task_id="test-docker-execution", state_dir=tmp_path)
+        code = """
+import json
+print(json.dumps({"message": "Hello from Docker!"}))
+"""
+        res = await executor.execute(code)
+        assert res.returncode == 0
+        assert "Hello from Docker!" in res.stdout
+        assert res.stderr == ""
+
+        # Test pre-flight check failure on invalid runtime
+        settings.SANDBOX_DOCKER_RUNTIME = "non-existent-runtime"
+        res_fail = await executor.execute(code)
+        assert res_fail.returncode == -3
+        assert "DockerRuntimeError" in res_fail.stderr
+
+    finally:
+        settings.SANDBOX_RUNTIME = original_runtime
+        settings.SANDBOX_DOCKER_RUNTIME = original_docker_runtime
+

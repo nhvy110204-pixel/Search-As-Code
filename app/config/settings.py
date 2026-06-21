@@ -110,6 +110,16 @@ class Settings(BaseSettings):
     SEMANTIC_CACHE_THRESHOLD: float = 0.92
     SEMANTIC_CACHE_TTL: int = 604800  # Thời gian lưu cache (7 ngày)
 
+    # Sandbox configurations
+    SANDBOX_RUNTIME: str = "local"           # "local" or "docker"
+    SANDBOX_DOCKER_IMAGE: str = "sac-sandbox:latest"
+    SANDBOX_DOCKER_RUNTIME: Optional[str] = None  # "runsc" for gVisor
+    SANDBOX_DOCKER_NETWORK: str = "host"     # "host" in dev, custom bridge in prod
+    SANDBOX_MEMORY: str = "256m"
+    SANDBOX_CPU: float = 0.5
+    SANDBOX_USER: str = "sandbox"
+    SANDBOX_DOCKER_TIMEOUT: int = 60
+
     @property
     def DATABASE_URL(self) -> str:
         return URL.create(
