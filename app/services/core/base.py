@@ -53,8 +53,10 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             return self.repo.hard_delete(id)
         return self.repo.soft_delete(id)
 
+    @service_boundary("Count Entities")
     def count(self, filters: Optional[Dict] = None, include_deleted: bool = False) -> int:
         return self.repo.count(filters=filters, include_deleted=include_deleted)
 
+    @service_boundary("Entity Exists")
     def exists(self, filters: Dict[str, Any]) -> bool:
         return self.repo.exists(filters=filters)

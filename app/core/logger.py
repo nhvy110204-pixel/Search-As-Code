@@ -6,7 +6,7 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 def service_boundary(operation_name: str):
-    def logger(func: Callable[..., Any]):
+    def decorator(func: Callable[..., Any]):
         if asyncio.iscoroutinefunction(func):
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
@@ -31,4 +31,4 @@ def service_boundary(operation_name: str):
                     logger.error(f"Failed operation [{operation_name}]: {str(e)}", exc_info=True)
                     raise RuntimeError(f"Service error during {operation_name}: {str(e)}")
             return sync_wrapper
-    return logger
+    return decorator

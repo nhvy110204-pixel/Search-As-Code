@@ -4,13 +4,14 @@ from app.models.document import DocumentChunk
 from app.repositories.document_chunk import DocumentChunkRepository
 from app.schemas.dto.document_chunk import DocumentChunkCreate, DocumentChunkUpdate, DocumentChunkResponse, DocumentChunkListResponse
 from app.services.core.base import BaseService
-
+from app.core.logger import service_boundary
 
 class DocumentChunkService(BaseService[DocumentChunk, DocumentChunkCreate, DocumentChunkUpdate]):
     def __init__(self, repository: DocumentChunkRepository):
         super().__init__(repository)
         self.chunk_repo = repository
 
+    @service_boundary("Get Chunks Paginated")
     def get_chunks_paginated(
         self,
         page: int = 1,
@@ -27,14 +28,17 @@ class DocumentChunkService(BaseService[DocumentChunk, DocumentChunkCreate, Docum
             page_size=page_size
         )
 
+    @service_boundary("Get Chunk by Embedding ID")
     def get_by_embedding_id(self, embedding_id: uuid.UUID) -> Optional[DocumentChunk]:
         """Domain method: get chunk by embedding ID."""
         return self.chunk_repo.get_by_embedding_id(embedding_id)
 
+    @service_boundary("Get Chunks by Document")
     def get_by_document(self, document_id: uuid.UUID, skip: int = 0, limit: int = 100) -> List[DocumentChunk]:
         """Domain method: get chunks by document."""
         return self.chunk_repo.get_by_document(document_id, skip=skip, limit=limit)
 
+    @service_boundary("Delete Chunks by Document")
     def delete_by_document(self, document_id: uuid.UUID, hard: bool = False) -> int:
         """Domain method: delete all chunks of a document."""
         return self.chunk_repo.delete_by_document(document_id, hard=hard)

@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Dict, Any
 from uuid import UUID
 
@@ -11,6 +12,10 @@ from app.schemas.dto.user import (
     UserListResponse,
     UserUpdate,
 )
+from app.services.core.redis_service import redis_cache_service
+from app.core.logger import service_boundary
+
+logger = logging.getLogger(__name__)
 
 
 class UserService(BaseService[User, UserCreate, UserUpdate]):
@@ -19,6 +24,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
     def __init__(self, repository: UserRepository):
         super().__init__(repository)
 
+    @service_boundary("Create User")
     def create(self, obj_in: UserCreate) -> User:
         """Create user with password hashing (business logic)."""
         hashed = get_password_hash(obj_in.password)
@@ -32,6 +38,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
         )
         return self.repo.create_user(internal)
 
+    @service_boundary("Authenticate User")
     def authenticate(self, identifier: str, password: str) -> Optional[User]:
         """Authenticate user by email or username."""
         normalized = identifier.strip()
@@ -40,6 +47,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
             return user
         return None
 
+    @service_boundary("Get Users Paginated")
     def get_users_paginated(
         self,
         page: int = 1,
@@ -49,3 +57,29 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
         """Get paginated users with optional filters."""
         items, total = self.repo.list_users(page=page, page_size=page_size, filters=filters)
         return UserListResponse(items=items, total=total, page=page, page_size=page_size)
+
+    @service_boundary("Update User")
+    def update(self, id: UUID, obj_in: UserUpdate | Dict[str, Any]) -> Optional[User]:
+        """Update user and invalidate their Redis session cache."""
+        user = super().update(id, obj_in)
+        if user:
+            try:
+                r = redis_cache_service.redis
+                if r is not None:
+                    r.delete(f"user:session:{id}")
+            except Exception as e:
+                logger.warning("Failed to invalidate user session cache: %s", e)
+        return user
+
+    @service_boundary("Delete User")
+    def delete(self, id: UUID, hard: bool = False) -> bool:
+        """Delete user and invalidate their Redis session cache."""
+        ok = super().delete(id, hard)
+        if ok:
+            try:
+                r = redis_cache_service.redis
+                if r is not None:
+                    r.delete(f"user:session:{id}")
+            except Exception as e:
+                logger.warning("Failed to invalidate user session cache: %s", e)
+        return ok
