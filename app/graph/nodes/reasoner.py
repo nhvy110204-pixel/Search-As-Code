@@ -5,6 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from app.config.settings import settings
 from app.graph.state.agent_state import AgentState
+from app.core.llm_factory import get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def _extract_code_block(text: str) -> Optional[str]:
     return None
 
 
-async def reasoner_node(state: AgentState) -> dict:
+async def reasoner_node(state: AgentState, config: dict = None) -> dict:
     """
     Node Reasoner: Node tư duy nhận thức của agent SaC.
     Tạo bộ nhớ làm việc ngắn gọn, gọi LLM, trích xuất code Python
@@ -94,12 +95,8 @@ async def reasoner_node(state: AgentState) -> dict:
     # 2. Biên dịch prompt bộ nhớ làm việc ngắn gọn
     working_memory = build_working_memory(state)
 
-    # 3. Khởi tạo mô hình ChatOpenAI
-    llm = ChatOpenAI(
-        api_key=settings.OPENAI_API_KEY,
-        model=settings.CHAT_MODEL_NAME,
-        temperature=0.0
-    )
+    # 3. Khởi tạo mô hình ChatOpenAI thông qua LLM Factory
+    llm = get_llm_client(config, streaming=False)
 
     # 4. Gọi LLM chỉ với system prompt và bộ nhớ làm việc
     # Điều này giữ cửa sổ ngữ cảnh nhỏ và ngăn chặn phình token.

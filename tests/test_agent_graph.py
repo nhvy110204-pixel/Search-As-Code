@@ -6,11 +6,11 @@ from app.graph.graphs.agent_graph import agent_graph
 from app.shared.enums import StopReason
 
 @pytest.mark.anyio
-@patch("app.graph.nodes.reasoner.ChatOpenAI")
-async def test_agent_graph_full_loop(mock_chat_openai):
+@patch("app.graph.nodes.reasoner.get_llm_client")
+async def test_agent_graph_full_loop(mock_get_llm_client):
     # Mock LLM instances
     mock_llm_instance = MagicMock()
-    mock_chat_openai.return_value = mock_llm_instance
+    mock_get_llm_client.return_value = mock_llm_instance
     
     # We will simulate 2 turns:
     # Turn 1: Reasoner generates a valid python code block to write to state dir
@@ -72,10 +72,10 @@ print("File written successfully!")
 
 
 @pytest.mark.anyio
-@patch("app.graph.nodes.reasoner.ChatOpenAI")
-async def test_agent_graph_sandbox_self_debugging(mock_chat_openai):
+@patch("app.graph.nodes.reasoner.get_llm_client")
+async def test_agent_graph_sandbox_self_debugging(mock_get_llm_client):
     mock_llm_instance = MagicMock()
-    mock_chat_openai.return_value = mock_llm_instance
+    mock_get_llm_client.return_value = mock_llm_instance
     
     # Mock responses:
     # Turn 1: Generates code that will crash at runtime in sandbox
@@ -115,12 +115,12 @@ raise ValueError("Simulated sandbox crash")
 
 
 @pytest.mark.anyio
-@patch("app.graph.nodes.reasoner.ChatOpenAI")
-@patch("app.graph.nodes.finalizer.ChatOpenAI")
-async def test_agent_graph_citation_self_correction(mock_finalizer_chat, mock_reasoner_chat):
+@patch("app.graph.nodes.reasoner.get_llm_client")
+@patch("app.graph.nodes.finalizer.get_llm_client")
+async def test_agent_graph_citation_self_correction(mock_finalizer_client, mock_reasoner_client):
     # Mock Reasoner
     mock_reasoner_llm = MagicMock()
-    mock_reasoner_chat.return_value = mock_reasoner_llm
+    mock_reasoner_client.return_value = mock_reasoner_llm
     
     # Reasoner Turn 1: Write evidence & completion signal
     response_reasoner = MagicMock()
@@ -146,7 +146,7 @@ signal_file.write_text(json.dumps({
     
     # Mock Finalizer
     mock_finalizer_llm = MagicMock()
-    mock_finalizer_chat.return_value = mock_finalizer_llm
+    mock_finalizer_client.return_value = mock_finalizer_llm
     
     # Finalizer Call 1: Return invalid citation [2] (out of bounds, since len(evidence) == 1)
     response_finalizer_1 = MagicMock()
@@ -180,12 +180,12 @@ signal_file.write_text(json.dumps({
 
 
 @pytest.mark.anyio
-@patch("app.graph.nodes.reasoner.ChatOpenAI")
-@patch("app.graph.nodes.finalizer.ChatOpenAI")
-async def test_agent_graph_citation_fallback_refusal(mock_finalizer_chat, mock_reasoner_chat):
+@patch("app.graph.nodes.reasoner.get_llm_client")
+@patch("app.graph.nodes.finalizer.get_llm_client")
+async def test_agent_graph_citation_fallback_refusal(mock_finalizer_client, mock_reasoner_client):
     # Mock Reasoner
     mock_reasoner_llm = MagicMock()
-    mock_reasoner_chat.return_value = mock_reasoner_llm
+    mock_reasoner_client.return_value = mock_reasoner_llm
     
     response_reasoner = MagicMock()
     response_reasoner.content = """
@@ -210,7 +210,7 @@ signal_file.write_text(json.dumps({
     
     # Mock Finalizer
     mock_finalizer_llm = MagicMock()
-    mock_finalizer_chat.return_value = mock_finalizer_llm
+    mock_finalizer_client.return_value = mock_finalizer_llm
     
     # Finalizer Call 1: Return invalid citation [2]
     response_finalizer_1 = MagicMock()

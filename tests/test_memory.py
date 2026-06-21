@@ -129,16 +129,16 @@ async def test_extractor_node_saves_memories(mock_embed, mock_chat_openai, db_se
 
 
 @pytest.mark.anyio
-@patch("app.graph.nodes.reasoner.ChatOpenAI")
+@patch("app.graph.nodes.reasoner.get_llm_client")
 @patch("app.graph.nodes.memory_extractor.ChatOpenAI")
 @patch("app.services.agent.memory_service.embed")
-async def test_agent_graph_full_memory_loop(mock_embed, mock_extractor_llm, mock_reasoner_llm, db_session, test_user):
+async def test_agent_graph_full_memory_loop(mock_embed, mock_extractor_llm, mock_reasoner_client, db_session, test_user):
     # Mock embeddings
     mock_embed.return_value = [[0.3] * 1536]
     
     # Mock Reasoner LLM (Turn 1 returns code, Turn 2 returns final answer)
     mock_reasoner_instance = MagicMock()
-    mock_reasoner_llm.return_value = mock_reasoner_instance
+    mock_reasoner_client.return_value = mock_reasoner_instance
     
     resp_reasoner_1 = MagicMock()
     resp_reasoner_1.content = """

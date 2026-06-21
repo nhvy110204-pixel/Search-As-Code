@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     SANDBOX_USER: str = "sandbox"
     SANDBOX_DOCKER_TIMEOUT: int = 60
 
+    # LiteLLM Proxy and Encryption
+    LITELLM_PROXY_URL: Optional[str] = None
+    LITELLM_PROXY_KEY: Optional[str] = None
+    ENCRYPTION_KEY: Optional[str] = None
+
     @property
     def DATABASE_URL(self) -> str:
         return URL.create(

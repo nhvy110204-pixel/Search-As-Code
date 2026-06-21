@@ -34,6 +34,7 @@ from app.services.chat.stream_state import stream_state_manager
 
 from app.services.chat.semantic_cache import semantic_cache
 from app.tasks.chat_tasks import save_semantic_cache
+from app.services.core.redis_service import redis_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -270,17 +271,25 @@ class ChatStreamService:
             )
             return
 
-        # Look up project_id from session
+        # Look up project_id and encrypted_custom_api_keys
         project_id = None
+        encrypted_keys = None
         db_session = self.session_factory()
         try:
             session_obj = db_session.query(ChatSession).filter(ChatSession.id == prepared.session_id).first()
             if session_obj:
                 project_id = str(session_obj.project_id)
+            user_obj = db_session.query(User).filter(User.id == prepared.user_id).first()
+            if user_obj:
+                encrypted_keys = user_obj.encrypted_custom_api_keys
         except Exception as e:
-            logger.error(f"Failed to fetch chat session in stream_sac_events: {e}")
+            logger.error(f"Failed to fetch chat session/user in stream_sac_events: {e}")
         finally:
             db_session.close()
+
+        from app.core.encryption import decrypt_api_keys
+        from app.models.user import User
+        decrypted_keys = decrypt_api_keys(encrypted_keys)
 
         if not project_id:
             yield self.streamer._create_event(
@@ -341,7 +350,12 @@ class ChatStreamService:
             async for event in agent_graph.astream_events(
                 initial_state,
                 version="v1",
-                config={"configurable": {"thread_id": str(prepared.session_id)}}
+                config={
+                    "configurable": {
+                        "thread_id": str(prepared.session_id),
+                        "user_api_keys": decrypted_keys
+                    }
+                }
             ):
                 # Check for remote cancellation flag and connection disconnects
                 if await is_disconnected() or stream_state_manager.is_cancelled(prepared.run_id):
@@ -514,7 +528,12 @@ class ChatStreamService:
 
             # Fetch the final state of the graph to log outcome and return final answer
             final_state = await agent_graph.aget_state(
-                config={"configurable": {"thread_id": str(prepared.session_id)}}
+                config={
+                    "configurable": {
+                        "thread_id": str(prepared.session_id),
+                        "user_api_keys": decrypted_keys
+                    }
+                }
             )
             final_answer = final_state.values.get("final_answer") or "".join(content_parts)
 
@@ -577,6 +596,15 @@ class ChatStreamService:
             )
 
         finally:
+            # Clean up active run from Redis
+            try:
+                r = redis_cache_service.redis
+                if r is not None:
+                    active_key = f"chat:active:{prepared.user_id}"
+                    r.zrem(active_key, str(prepared.run_id))
+            except Exception as e:
+                logger.warning("Failed to remove active run from Redis: %s", e)
+
             # Clean up temp state directory
             if state_dir.exists():
                 try:
@@ -607,6 +635,32 @@ class ChatStreamService:
         self.db.add(run)
         self.db.flush()
         self.db.refresh(run)
+
+        # Register in Redis rate limiter sliding windows
+        try:
+            r = redis_cache_service.redis
+            if r is not None:
+                now_ts = datetime.now(timezone.utc).timestamp()
+                run_id_str = str(run.id)
+
+                # Register in active concurrent streams ZSET
+                expire_ts = now_ts + settings.CHAT_STREAM_TOTAL_TIMEOUT_SECONDS
+                active_key = f"chat:active:{user_id}"
+                r.zadd(active_key, {run_id_str: expire_ts})
+                r.expire(active_key, settings.CHAT_STREAM_TOTAL_TIMEOUT_SECONDS)
+
+                # Increment per-minute request limit
+                minute_key = f"chat:minute:{user_id}"
+                r.zadd(minute_key, {run_id_str: now_ts})
+                r.expire(minute_key, 60)
+
+                # Increment daily limit
+                daily_key = f"chat:daily:{user_id}"
+                r.zadd(daily_key, {run_id_str: now_ts})
+                r.expire(daily_key, 86400)
+        except Exception as e:
+            logger.warning("Failed to register active chat run in Redis: %s", e)
+
         return run
 
     def _create_stream_run_for_cache_hit(
@@ -635,6 +689,26 @@ class ChatStreamService:
         self.db.add(run)
         self.db.flush()
         self.db.refresh(run)
+
+        # Register in Redis rate limiter sliding windows (excluding active concurrent limits)
+        try:
+            r = redis_cache_service.redis
+            if r is not None:
+                now_ts = datetime.now(timezone.utc).timestamp()
+                run_id_str = str(run.id)
+
+                # Increment per-minute request limit
+                minute_key = f"chat:minute:{user_id}"
+                r.zadd(minute_key, {run_id_str: now_ts})
+                r.expire(minute_key, 60)
+
+                # Increment daily limit
+                daily_key = f"chat:daily:{user_id}"
+                r.zadd(daily_key, {run_id_str: now_ts})
+                r.expire(daily_key, 86400)
+        except Exception as e:
+            logger.warning("Failed to register cache-hit chat run in Redis: %s", e)
+
         return run
 
     def _create_prepared_stream_for_replay(

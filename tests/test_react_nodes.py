@@ -94,11 +94,11 @@ async def test_planner_node_initialization():
 
 
 @pytest.mark.anyio
-@patch("app.graph.nodes.reasoner.ChatOpenAI")
-async def test_reasoner_node_execution(mock_chat_openai):
+@patch("app.graph.nodes.reasoner.get_llm_client")
+async def test_reasoner_node_execution(mock_get_llm_client):
     # Mock LLM instance and its asynchronous invoke method
     mock_llm_instance = MagicMock()
-    mock_chat_openai.return_value = mock_llm_instance
+    mock_get_llm_client.return_value = mock_llm_instance
     
     mock_response = MagicMock()
     mock_response.content = """

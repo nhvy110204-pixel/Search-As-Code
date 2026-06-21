@@ -11,10 +11,11 @@ from app.models.document import Document
 from app.graph.state.agent_state import AgentState
 from app.shared.enums import StopReason
 from app.guardrails.alignment import build_proactive_refusal
+from app.core.llm_factory import get_llm_client
 
 logger = logging.getLogger(__name__)
 
-async def finalizer_node(state: AgentState) -> dict:
+async def finalizer_node(state: AgentState, config: dict = None) -> dict:
     """
     Finalizer Node: Generates the final grounded answer with citations,
     handles self-correction loops for invalid citations, or falls back to
@@ -85,12 +86,7 @@ async def finalizer_node(state: AgentState) -> dict:
         
     # 5. Generate or correct grounded answer via LLM
     try:
-        llm = ChatOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            model=settings.CHAT_MODEL_NAME,
-            temperature=0.0,
-            streaming=True
-        )
+        llm = get_llm_client(config, streaming=True)
         
         # Self-correction check: if unverified_claims exist, we prompt for correction
         if unverified_claims:
