@@ -88,7 +88,8 @@ async def finalizer_node(state: AgentState) -> dict:
         llm = ChatOpenAI(
             api_key=settings.OPENAI_API_KEY,
             model=settings.CHAT_MODEL_NAME,
-            temperature=0.0
+            temperature=0.0,
+            streaming=True
         )
         
         # Self-correction check: if unverified_claims exist, we prompt for correction

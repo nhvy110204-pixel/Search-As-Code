@@ -2,10 +2,13 @@
 
 import logging
 import uuid
+import time
+import tempfile
+import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any
 from datetime import datetime, timezone
-
+from blake3 import blake3
+from pathlib import Path
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,7 +28,10 @@ from app.services.chat.providers import ChatCompletionProvider, OpenAIChatComple
 from app.services.chat.streamer import ChatStreamer
 from app.services.chat.validators import ChatStreamValidator
 from app.shared.enums import ChatStreamStatus
-from blake3 import blake3
+from app.graph.graphs.agent_graph import agent_graph
+from app.models.chat_session import ChatSession
+from app.services.chat.stream_state import stream_state_manager
+
 from app.services.chat.semantic_cache import semantic_cache
 from app.tasks.chat_tasks import save_semantic_cache
 
@@ -245,6 +251,338 @@ class ChatStreamService:
             run_id=prepared.run_id,
         ):
             yield event
+
+    async def stream_sac_events(
+        self,
+        prepared: PreparedChatStream,
+        is_disconnected: Callable[[], Awaitable[bool]],
+    ) -> AsyncIterator[dict[str, str]]:
+        if prepared.replay_content is not None:
+            yield self.streamer._create_event(
+                1,
+                "message.done",
+                {
+                    "message_id": str(prepared.assistant_message_id),
+                    "content": prepared.replay_content,
+                    "prompt_tokens": prepared.replay_prompt_tokens,
+                    "completion_tokens": prepared.replay_completion_tokens,
+                },
+            )
+            return
+
+        # Look up project_id from session
+        project_id = None
+        db_session = self.session_factory()
+        try:
+            session_obj = db_session.query(ChatSession).filter(ChatSession.id == prepared.session_id).first()
+            if session_obj:
+                project_id = str(session_obj.project_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch chat session in stream_sac_events: {e}")
+        finally:
+            db_session.close()
+
+        if not project_id:
+            yield self.streamer._create_event(
+                1,
+                "error",
+                {
+                    "message_id": str(prepared.assistant_message_id),
+                    "code": "invalid_session",
+                    "message": "Chat session does not have an associated project."
+                }
+            )
+            return
+
+        started_at = time.perf_counter()
+        event_id = 1
+        content_parts: list[str] = []
+
+        # Yield message.created
+        yield self.streamer._create_event(
+            event_id,
+            "message.created",
+            {"message_id": str(prepared.assistant_message_id)}
+        )
+        event_id += 1
+
+        # Establish state dir
+        state_dir = Path(tempfile.gettempdir()) / "sac_states" / str(prepared.run_id)
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build initial AgentState
+        directive_text = ""
+        if prepared.messages:
+            directive_text = prepared.messages[-1].get("content", "")
+        else:
+            directive_text = "Analyze project sources"
+
+        initial_state = {
+            "task_id": str(prepared.run_id),
+            "directive": directive_text,
+            "state_dir": str(state_dir),
+            "project_id": project_id,
+            "user_id": str(prepared.user_id),
+            "turns": [],
+            "current_turn": 0,
+            "max_turns": 10,
+            "messages": [],
+            "total_sdk_calls": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+            "is_complete": False
+        }
+
+        # Keep track of when nodes start to calculate duration_ms
+        node_start_times = {}
+
+        try:
+            # Run LangGraph using astream_events
+            async for event in agent_graph.astream_events(
+                initial_state,
+                version="v1",
+                config={"configurable": {"thread_id": str(prepared.session_id)}}
+            ):
+                # Check for remote cancellation flag and connection disconnects
+                if await is_disconnected() or stream_state_manager.is_cancelled(prepared.run_id):
+                    logger.info(f"Ngắt luồng stream SaC Agent sớm do nhận được tín hiệu hủy: run_id={prepared.run_id}")
+                    # Mark failed in DB
+                    self.outcome.mark_failed(
+                        prepared,
+                        "".join(content_parts),
+                        "cancelled",
+                        "Stream cancelled by user",
+                        started_at,
+                        None
+                    )
+                    yield self.streamer._create_event(
+                        event_id,
+                        "error",
+                        {
+                            "message_id": str(prepared.assistant_message_id),
+                            "code": "cancelled",
+                            "message": "Stream cancelled by user",
+                        }
+                    )
+                    return
+
+                event_name = event.get("event")
+                meta = event.get("metadata", {})
+                node_name = meta.get("langgraph_node")
+
+                # Track node starts
+                if event_name == "on_chain_start" and node_name:
+                    node_start_times[node_name] = time.perf_counter()
+                    if node_name == "planner":
+                        yield self.streamer._create_event(
+                            event_id,
+                            "agent.plan",
+                            {"message_id": str(prepared.assistant_message_id), "status": "started"}
+                        )
+                        event_id += 1
+                    elif node_name == "reasoner":
+                        yield self.streamer._create_event(
+                            event_id,
+                            "agent.code",
+                            {"message_id": str(prepared.assistant_message_id), "status": "started"}
+                        )
+                        event_id += 1
+                    elif node_name == "executor":
+                        yield self.streamer._create_event(
+                            event_id,
+                            "agent.executing",
+                            {"message_id": str(prepared.assistant_message_id), "status": "started"}
+                        )
+                        event_id += 1
+                    elif node_name == "citation_validator":
+                        yield self.streamer._create_event(
+                            event_id,
+                            "agent.validating_citations",
+                            {"message_id": str(prepared.assistant_message_id), "status": "started"}
+                        )
+                        event_id += 1
+
+                # Track node ends to retrieve final node outputs and calculate durations
+                elif event_name == "on_chain_end" and node_name:
+                    start_time = node_start_times.get(node_name, time.perf_counter())
+                    duration_ms = int((time.perf_counter() - start_time) * 1000)
+
+                    output_data = event.get("data", {}).get("output", {})
+                    if isinstance(output_data, dict):
+                        if node_name == "planner":
+                            messages = output_data.get("messages", [])
+                            plan_text = ""
+                            if messages:
+                                plan_text = getattr(messages[-1], "content", str(messages[-1]))
+                            yield self.streamer._create_event(
+                                event_id,
+                                "agent.plan",
+                                {
+                                    "message_id": str(prepared.assistant_message_id),
+                                    "status": "completed",
+                                    "plan": plan_text,
+                                    "duration_ms": duration_ms
+                                }
+                            )
+                            event_id += 1
+
+                        elif node_name == "reasoner":
+                            code_val = output_data.get("_pending_code") or ""
+                            yield self.streamer._create_event(
+                                event_id,
+                                "agent.code",
+                                {
+                                    "message_id": str(prepared.assistant_message_id),
+                                    "status": "completed",
+                                    "code": code_val,
+                                    "duration_ms": duration_ms
+                                }
+                            )
+                            event_id += 1
+
+                        elif node_name == "executor":
+                            turns = output_data.get("turns", [])
+                            stdout_val = ""
+                            stderr_val = ""
+                            exit_code = 0
+                            if turns:
+                                last_turn = turns[-1]
+                                stdout_val = last_turn.get("stdout", "")
+                                stderr_val = last_turn.get("stderr", "")
+                                exit_code = last_turn.get("returncode", 0)
+
+                            yield self.streamer._create_event(
+                                event_id,
+                                "agent.sandbox_output",
+                                {
+                                    "message_id": str(prepared.assistant_message_id),
+                                    "stdout": stdout_val,
+                                    "stderr": stderr_val,
+                                    "exit_code": exit_code,
+                                    "duration_ms": duration_ms
+                                }
+                            )
+                            event_id += 1
+
+                        elif node_name == "execution_validator":
+                            turns = output_data.get("turns", [])
+                            if turns and turns[-1].get("returncode", 0) != 0:
+                                last_turn = turns[-1]
+                                retry_cnt = len(turns)
+                                err_val = last_turn.get("stderr", "Unknown sandbox error")
+                                yield self.streamer._create_event(
+                                    event_id,
+                                    "agent.debugging",
+                                    {
+                                        "message_id": str(prepared.assistant_message_id),
+                                        "retry_count": retry_cnt,
+                                        "error": err_val
+                                    }
+                                )
+                                event_id += 1
+
+                        elif node_name == "citation_validator":
+                            unverified = output_data.get("unverified_claims")
+                            if unverified:
+                                yield self.streamer._create_event(
+                                    event_id,
+                                    "agent.debugging",
+                                    {
+                                        "message_id": str(prepared.assistant_message_id),
+                                        "retry_count": output_data.get("citation_retry_counter", 1),
+                                        "error": f"Invalid citations detected: {unverified}. Retrying finalizer node..."
+                                    }
+                                )
+                                event_id += 1
+
+                # Token-level LLM streaming events from the finalizer node
+                elif event_name == "on_llm_stream" and node_name == "finalizer":
+                    chunk_text = event.get("data", {}).get("chunk", "")
+                    if hasattr(chunk_text, "content"):
+                        chunk_text = chunk_text.content
+                    elif isinstance(chunk_text, dict):
+                        chunk_text = chunk_text.get("content", "")
+
+                    if chunk_text:
+                        content_parts.append(chunk_text)
+                        yield self.streamer._create_event(
+                            event_id,
+                            "message.delta",
+                            {"message_id": str(prepared.assistant_message_id), "content": chunk_text}
+                        )
+                        event_id += 1
+
+            # Fetch the final state of the graph to log outcome and return final answer
+            final_state = await agent_graph.aget_state(
+                config={"configurable": {"thread_id": str(prepared.session_id)}}
+            )
+            final_answer = final_state.values.get("final_answer") or "".join(content_parts)
+
+            # Read citations if generated
+            citations = []
+            results_file = state_dir / "final_results.json"
+            if results_file.exists():
+                try:
+                    import json
+                    results_data = json.loads(results_file.read_text())
+                    citations = results_data.get("evidence", [])
+                except Exception:
+                    pass
+
+            # Mark complete in database
+            prompt_tokens = final_state.values.get("total_tokens", 0)
+            completion_tokens = 0
+            first_delta_at = node_start_times.get("finalizer")
+
+            self.outcome.mark_completed(
+                prepared,
+                final_answer,
+                prompt_tokens,
+                completion_tokens,
+                started_at,
+                first_delta_at
+            )
+
+            # Yield final message.done event
+            yield self.streamer._create_event(
+                event_id,
+                "message.done",
+                {
+                    "message_id": str(prepared.assistant_message_id),
+                    "content": final_answer,
+                    "citations": citations,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens
+                }
+            )
+
+        except Exception as exc:
+            logger.exception("Error in stream_sac_events: %s", exc)
+            self.outcome.mark_failed(
+                prepared,
+                "".join(content_parts),
+                "agent_failure",
+                str(exc),
+                started_at,
+                None
+            )
+            yield self.streamer._create_event(
+                event_id,
+                "error",
+                {
+                    "message_id": str(prepared.assistant_message_id),
+                    "code": "agent_failure",
+                    "message": f"Agent failed while processing: {str(exc)}",
+                }
+            )
+
+        finally:
+            # Clean up temp state directory
+            if state_dir.exists():
+                try:
+                    shutil.rmtree(state_dir, ignore_errors=True)
+                except Exception:
+                    pass
 
     def _create_stream_run(
         self,

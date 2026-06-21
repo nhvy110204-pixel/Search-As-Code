@@ -56,6 +56,27 @@ async def stream_chat(
     )
 
 
+@router.post("/stream/sac")
+async def stream_chat_sac(
+    payload: ChatStreamRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    service: ChatStreamService = Depends(get_chat_stream_service),
+):
+    prepared = await service.prepare_stream(payload, current_user)
+
+    return EventSourceResponse(
+        service.stream_sac_events(prepared, request.is_disconnected),
+        ping=settings.CHAT_STREAM_PING_SECONDS,
+        send_timeout=settings.CHAT_STREAM_SEND_TIMEOUT_SECONDS,
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/stream/{run_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
 def cancel_chat_stream(
     run_id: uuid.UUID,
