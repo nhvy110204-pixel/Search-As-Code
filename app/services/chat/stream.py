@@ -89,10 +89,24 @@ class ChatStreamService:
 
         self.validator.enforce_rate_limits(user.id)
 
+        # Tải ChatSession để xác định project_id và kiểm tra quyền sở hữu
+        chat_session = self.db.query(ChatSession).filter(ChatSession.id == payload.session_id).first()
+        if not chat_session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat session not found"
+            )
+        if chat_session.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Chat session does not belong to user"
+            )
+        project_id = chat_session.project_id
+
         # Kiểm tra Semantic Cache (Lock và đọc cache)
         
         query_hash = blake3(content.encode("utf-8")).hexdigest()
-        cached_answer, lock_acquired = await semantic_cache.get_or_lock(content)
+        cached_answer, lock_acquired = await semantic_cache.get_or_lock(content, project_id=str(project_id))
         
         if cached_answer:
             # Cache Hit: Tạo nhanh tin nhắn ở trạng thái COMPLETED trong DB
@@ -121,6 +135,7 @@ class ChatStreamService:
             return PreparedChatStream(
                 run_id=run.id,
                 user_id=user.id,
+                project_id=project_id,
                 session_id=payload.session_id,
                 user_message_id=user_message.id,
                 assistant_message_id=assistant_message.id,
@@ -163,6 +178,7 @@ class ChatStreamService:
         return PreparedChatStream(
             run_id=run.id,
             user_id=user.id,
+            project_id=project_id,
             session_id=payload.session_id,
             user_message_id=user_message.id,
             assistant_message_id=assistant_message.id,
@@ -172,88 +188,6 @@ class ChatStreamService:
         )
 
     async def stream_events(
-        self,
-        prepared: PreparedChatStream,
-        is_disconnected: Callable[[], Awaitable[bool]],
-    ) -> AsyncIterator[dict[str, str]]:
-        if prepared.replay_content is not None:
-            yield self.streamer._create_event(
-                1,
-                "message.done",
-                {
-                    "message_id": str(prepared.assistant_message_id),
-                    "content": prepared.replay_content,
-                    "prompt_tokens": prepared.replay_prompt_tokens,
-                    "completion_tokens": prepared.replay_completion_tokens,
-                },
-            )
-            return
-
-        started_at = None
-        content_parts: list[str] = []
-
-        def on_chunk(chunk_content: str):
-            content_parts.append(chunk_content)
-
-        def on_complete(content: str, prompt_tokens: int, completion_tokens: int, started_at_: float, first_delta_at: float | None):
-            self.outcome.mark_completed(
-                prepared,
-                content,
-                prompt_tokens,
-                completion_tokens,
-                started_at_,
-                first_delta_at,
-            )
-            # Nếu request này giữ lock ghi cache, gọi Celery task lưu cache dưới nền
-            if prepared.query_hash:
-                query = prepared.messages[-1]["content"] if prepared.messages else ""
-                save_semantic_cache.delay(
-                    query=query,
-                    content=content,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    query_hash=prepared.query_hash
-                )
-
-        def on_error(error_code: str, error_message: str):
-            self.outcome.mark_failed(
-                prepared,
-                "".join(content_parts),
-                error_code,
-                error_message,
-                started_at or 0,
-                None,
-            )
-            # Giải phóng lock nếu luồng sinh bị lỗi
-            if prepared.query_hash:
-                semantic_cache.release_lock(prepared.query_hash)
-
-        def on_timeout(content: str, started_at_: float, first_delta_at: float | None):
-            self.outcome.mark_failed(
-                prepared,
-                content,
-                "provider_timeout",
-                "Chat provider timed out while streaming",
-                started_at_,
-                first_delta_at,
-            )
-            # Giải phóng lock nếu luồng sinh bị timeout
-            if prepared.query_hash:
-                semantic_cache.release_lock(prepared.query_hash)
-
-        async for event in self.streamer.stream_events(
-            prepared.messages,
-            prepared.assistant_message_id,
-            is_disconnected,
-            on_chunk,
-            on_complete,
-            on_error,
-            on_timeout,
-            run_id=prepared.run_id,
-        ):
-            yield event
-
-    async def stream_sac_events(
         self,
         prepared: PreparedChatStream,
         is_disconnected: Callable[[], Awaitable[bool]],
@@ -719,6 +653,7 @@ class ChatStreamService:
         return PreparedChatStream(
             run_id=run.id,
             user_id=run.user_id,
+            project_id=run.session.project_id if run.session else None,
             session_id=run.session_id,
             user_message_id=run.user_message_id,
             assistant_message_id=run.assistant_message_id,

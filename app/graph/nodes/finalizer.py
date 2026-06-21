@@ -30,14 +30,56 @@ async def finalizer_node(state: AgentState, config: dict = None) -> dict:
     # 1. Fetch available project files for refusal guidance
     project_files = []
     if project_id:
-        db = SessionLocal()
+        from app.services.core.redis_service import redis_cache_service
+        cache_key = f"project:{project_id}:documents_metadata"
+        cache_hit = False
+        
         try:
-            docs = db.query(Document).filter(Document.project_id == uuid.UUID(project_id)).all()
-            project_files = [d.name for d in docs]
+            r = redis_cache_service.redis
+            if r:
+                data = r.get(cache_key)
+                if data is not None:
+                    cached_docs = json.loads(data)
+                    project_files = [doc["file_name"] for doc in cached_docs]
+                    cache_hit = True
+                    logger.info(f"Cache HIT for project documents metadata: project_id={project_id}, count={len(project_files)}")
         except Exception as e:
-            logger.error("Failed to query project files in finalizer: %s", e)
-        finally:
-            db.close()
+            logger.warning(f"Failed to check/read project documents metadata cache: {e}")
+            
+        if not cache_hit:
+            db = SessionLocal()
+            try:
+                docs = db.query(Document).filter(
+                    Document.project_id == uuid.UUID(project_id),
+                    Document.is_deleted.is_(False)
+                ).all()
+                
+                cached_metadata = []
+                for d in docs:
+                    status_val = d.status.value if hasattr(d.status, "value") else str(d.status)
+                    summary_val = d.processing_metadata.get("global_summary") if d.processing_metadata else None
+                    cached_metadata.append({
+                        "id": str(d.id),
+                        "file_name": d.file_name,
+                        "description": d.description,
+                        "status": status_val,
+                        "chunk_count": d.chunk_count,
+                        "global_summary": summary_val,
+                        "created_at": d.created_at.isoformat() if d.created_at else None
+                    })
+                
+                project_files = [doc["file_name"] for doc in cached_metadata]
+                logger.info(f"Cache MISS for project documents metadata: project_id={project_id}, queried {len(project_files)} from DB")
+                
+                # Write to Redis
+                r = redis_cache_service.redis
+                if r:
+                    r.setex(cache_key, 3600, json.dumps(cached_metadata))
+                    logger.info(f"Cached project documents metadata for project_id={project_id}")
+            except Exception as e:
+                logger.error("Failed to query/cache project files in finalizer: %s", e)
+            finally:
+                db.close()
             
     # 2. Check if we need to fail-fast with a refusal
     refusal_reasons = {

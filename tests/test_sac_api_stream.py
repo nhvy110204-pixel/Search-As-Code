@@ -115,7 +115,7 @@ async def test_stream_sac_events_success(mock_astream_events, mock_aget_state, m
 
     # Collect SSE events
     events = []
-    async for event in service.stream_sac_events(prepared, is_disconnected):
+    async for event in service.stream_events(prepared, is_disconnected):
         events.append(event)
 
     # Assert event names

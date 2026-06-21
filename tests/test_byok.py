@@ -115,7 +115,7 @@ async def test_stream_sac_events_injects_byok_keys(mock_astream_events, mock_age
 
     # Collect events to trigger generator run
     events = []
-    async for event in service.stream_sac_events(prepared, is_disconnected):
+    async for event in service.stream_events(prepared, is_disconnected):
         events.append(event)
 
     # Ensure generator ran successfully and checked user_api_keys injection

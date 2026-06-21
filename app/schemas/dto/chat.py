@@ -22,8 +22,10 @@ class PreparedChatStream:
     user_message_id: uuid.UUID | None
     assistant_message_id: uuid.UUID | None
     messages: list[dict[str, str]]
+    project_id: uuid.UUID | None = None
     client_request_id: str | None = None
     replay_content: str | None = None
     replay_prompt_tokens: int = 0
     replay_completion_tokens: int = 0
-    query_hash: Optional[str] = None  
+    query_hash: Optional[str] = None
+

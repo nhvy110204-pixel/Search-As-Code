@@ -99,6 +99,16 @@ class IngestionService:
 
                 uow.commit()
 
+            # Invalidate project files cache
+            try:
+                from app.services.core.redis_service import redis_cache_service
+                if redis_cache_service.redis:
+                    cache_key = f"project:{project_id}:documents_metadata"
+                    redis_cache_service.redis.delete(cache_key)
+                    logger.info(f"Invalidated project documents metadata cache during upload: project_id={project_id}")
+            except Exception as cache_err:
+                logger.warning(f"Failed to invalidate project documents metadata cache during upload: {cache_err}")
+
             celery_task = ingest_document.delay(
                 str(task.id),
                 str(document.id),

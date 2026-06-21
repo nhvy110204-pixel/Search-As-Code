@@ -81,12 +81,27 @@ async def retrieve(
             provider = EmbeddingManager.get_provider(async_mode=False)
             query_vector = provider.embed_text(query)
 
+            # Apply project_id filter if present in environment
+            project_id_str = os.environ.get("PROJECT_ID")
+            query_filter = None
+            if project_id_str:
+                from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+                query_filter = Filter(
+                    must=[
+                        FieldCondition(
+                            key="project_id",
+                            match=MatchValue(value=project_id_str)
+                        )
+                    ]
+                )
+
             # Search vector store
             results = qdrant_manager.search_vectors(
                 collection_name=settings.QDRANT_COLLECTION_CHUNKS,
                 query_vector=query_vector,
                 limit=limit,
-                score_threshold=0.0
+                score_threshold=0.0,
+                query_filter=query_filter
             )
 
             for res in results:

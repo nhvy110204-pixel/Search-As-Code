@@ -78,12 +78,14 @@ class QdrantManager:
         query_vector: List[float],
         limit: int = 10,
         score_threshold: float = 0.5,
+        query_filter: Optional[Filter] = None,
     ) -> List[dict]:
         results = self.client.search(
             collection_name=collection_name,
             query_vector=query_vector,
             limit=limit,
             score_threshold=score_threshold,
+            query_filter=query_filter,
         )
         return [
             {

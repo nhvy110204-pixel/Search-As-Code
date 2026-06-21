@@ -63,6 +63,16 @@ async def finalize_handler(
     
     uow.commit()
     
+    # Invalidate project documents metadata cache
+    try:
+        from app.services.core.redis_service import redis_cache_service
+        if redis_cache_service.redis:
+            cache_key = f"project:{project_id}:documents_metadata"
+            redis_cache_service.redis.delete(cache_key)
+            logger.info(f"Invalidated project documents metadata cache in finalize_handler: project_id={project_id}")
+    except Exception as cache_err:
+        logger.warning(f"Failed to invalidate project documents metadata cache in finalize_handler: {cache_err}")
+    
     return {
         "status": document.status,
         "chunk_count": total_chunks,

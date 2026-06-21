@@ -179,3 +179,69 @@ def test_semantic_cache_cleanup_orphans():
             assert remaining_points[0].id == uuid_active
     finally:
         qdrant_manager._client = old_client
+
+
+@pytest.mark.anyio
+async def test_semantic_cache_project_isolation():
+    """
+    Xác minh rằng hai dự án (project_id) khác nhau truy vấn cùng câu hỏi
+    sẽ được lưu ở hai khóa Redis/Qdrant riêng biệt, không bị leak xuyên dự án.
+    """
+    mock_redis = MockRedis()
+    mock_qdrant = MockQdrantClient()
+
+    old_client = qdrant_manager._client
+    qdrant_manager._client = mock_qdrant
+
+    try:
+        with patch("app.services.core.redis_service.redis_cache_service.redis", mock_redis), \
+             patch("app.core.qdrant.qdrant_manager.search_vectors") as mock_search, \
+             patch("app.rag.embeddings.manager.EmbeddingManager.get_provider") as mock_embed_provider:
+
+            mock_provider = MagicMock()
+            mock_provider.embed_text.return_value = [0.1] * 1536
+            mock_embed_provider.return_value = mock_provider
+
+            manager = SemanticCacheManager()
+            query = "Cấu hình mạng VPN thế nào?"
+            project_a = str(uuid.uuid4())
+            project_b = str(uuid.uuid4())
+            query_hash = blake3(query.encode("utf-8")).hexdigest()
+
+            # 1. Project A cache miss, acquire lock
+            mock_search.return_value = [] # Không tìm thấy vector tương đồng cho Project A
+            cached_data_a, lock_a = await manager.get_or_lock(query, project_id=project_a)
+            assert cached_data_a is None
+            assert lock_a is True
+
+            # Kiểm tra xem lock có chứa project_id của A
+            lock_key_a = f"semantic_lock:{project_a}:{query_hash}"
+            assert mock_redis.exists(lock_key_a) == 1
+
+            # 2. Lưu cache cho Project A
+            manager.save_sync(query, "Hướng dẫn VPN của dự án A", 10, 20, query_hash, project_id=project_a)
+            assert mock_redis.exists(lock_key_a) == 0 # Đã nhả lock
+            cache_key_a = f"semantic_cache:{project_a}:{query_hash}"
+            assert mock_redis.exists(cache_key_a) == 1 # Đã lưu cache
+
+            # 3. Project B truy vấn cùng câu hỏi đó
+            # Giả lập search_vectors trả về rỗng vì Qdrant filter project_id=project_b ngăn cản trả về cache của A
+            mock_search.return_value = []
+            cached_data_b, lock_b = await manager.get_or_lock(query, project_id=project_b)
+            
+            # Project B phải bị cache miss và giành được lock mới của riêng nó
+            assert cached_data_b is None
+            assert lock_b is True
+            lock_key_b = f"semantic_lock:{project_b}:{query_hash}"
+            assert mock_redis.exists(lock_key_b) == 1
+
+            # 4. Khi search_vectors cho Project A, nó trả về thông tin Qdrant trỏ tới cache của A
+            mock_search.return_value = [{"payload": {"redis_key": cache_key_a}, "score": 0.99}]
+            cached_data_a_hit, lock_a_hit = await manager.get_or_lock(query, project_id=project_a)
+            assert cached_data_a_hit is not None
+            assert cached_data_a_hit["content"] == "Hướng dẫn VPN của dự án A"
+            assert lock_a_hit is False
+
+    finally:
+        qdrant_manager._client = old_client
+

@@ -59,6 +59,7 @@ async def executor_node(state: AgentState) -> dict:
     executor = SandboxExecutor(
         task_id=state["task_id"],
         state_dir=state_dir,
+        project_id=state.get("project_id"),
     )
     # Run execution with turn_number propagated
     result = await executor.execute(code, timeout=120, turn_number=turn_num)

@@ -129,7 +129,15 @@ async def check_query_relevance(query: str, project_files: List[str], project_id
             request_timeout=2.0,
         )
         
-        files_list = "\n".join(f"- {f}" for f in project_files)
+        files_list_items = []
+        for f in project_files:
+            if isinstance(f, dict):
+                name = f.get("file_name", "Document")
+                summary = f.get("global_summary") or f.get("description") or "No summary available"
+                files_list_items.append(f"- {name}: {summary}")
+            else:
+                files_list_items.append(f"- {f}")
+        files_list = "\n".join(files_list_items)
         
         system_prompt = (
             "You are a fast query relevance classifier. Your task is to decide if the user's query "

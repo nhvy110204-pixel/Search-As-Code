@@ -118,10 +118,11 @@ def _classify_docker_error(returncode: int, stdout: str, stderr: str) -> Executi
     return ExecutionResult(stdout=stdout, stderr=stderr, returncode=returncode)
 
 class SandboxExecutor:
-    def __init__(self, task_id: str, state_dir: Path):
+    def __init__(self, task_id: str, state_dir: Path, project_id: Optional[str] = None):
         self.task_id = task_id
         self.state_dir = Path(state_dir)
         self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.project_id = project_id
 
     async def execute(self, code: str, timeout: int = 60, turn_number: int = 1) -> ExecutionResult:
         """
@@ -214,6 +215,7 @@ class SandboxExecutor:
                     "-e", "STATE_DIR=/workspace",
                     "-e", f"TASK_ID={self.task_id}",
                     "-e", f"TURN_NUMBER={turn_number}",
+                    "-e", f"PROJECT_ID={self.project_id or ''}",
                 ]
                 if settings.SANDBOX_DOCKER_RUNTIME:
                     docker_args.extend(["--runtime", settings.SANDBOX_DOCKER_RUNTIME])
@@ -275,6 +277,7 @@ class SandboxExecutor:
                             "STATE_DIR": str(self.state_dir),
                             "TASK_ID": self.task_id,
                             "TURN_NUMBER": str(turn_number),
+                            "PROJECT_ID": self.project_id or "",
                         })
                         return subprocess.run(
                             [sys.executable, script_path],

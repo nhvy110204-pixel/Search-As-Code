@@ -21,7 +21,7 @@ class SemanticCacheManager:
         self.threshold = settings.SEMANTIC_CACHE_THRESHOLD
         self.ttl = settings.SEMANTIC_CACHE_TTL
 
-    async def get_or_lock(self, query: str) -> tuple[Optional[Dict[str, Any]], bool]:
+    async def get_or_lock(self, query: str, project_id: Optional[str] = None) -> tuple[Optional[Dict[str, Any]], bool]:
         """
         Kiểm tra cache hoặc lấy khóa (lock) để tránh tình trạng tranh chấp cache (Cache Stampede).
         Trả về:
@@ -32,18 +32,35 @@ class SemanticCacheManager:
         try:
             # 1. Băm câu hỏi bằng blake3 để tạo key an toàn
             query_hash = blake3(query.encode("utf-8")).hexdigest()
-            redis_key = f"semantic_cache:{query_hash}"
-            lock_key = f"semantic_lock:{query_hash}"
+            if project_id:
+                redis_key = f"semantic_cache:{project_id}:{query_hash}"
+                lock_key = f"semantic_lock:{project_id}:{query_hash}"
+            else:
+                redis_key = f"semantic_cache:{query_hash}"
+                lock_key = f"semantic_lock:{query_hash}"
 
             # 2. Tìm kiếm vector tương đồng trên Qdrant để lấy key của Redis tương ứng
             provider = EmbeddingManager.get_provider(async_mode=False)
             query_vector = provider.embed_text(query)
 
+            query_filter = None
+            if project_id:
+                from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+                query_filter = Filter(
+                    must=[
+                        FieldCondition(
+                            key="project_id",
+                            match=MatchValue(value=str(project_id))
+                        )
+                    ]
+                )
+
             results = qdrant_manager.search_vectors(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 limit=1,
-                score_threshold=self.threshold
+                score_threshold=self.threshold,
+                query_filter=query_filter
             )
 
             matched_redis_key = None
@@ -63,8 +80,14 @@ class SemanticCacheManager:
                             return json.loads(cached_data), False
                         
                         # Kiểm tra xem có lock nào tương ứng với key này đang hoạt động không
-                        matched_hash = matched_redis_key.split(":")[-1]
-                        matched_lock_key = f"semantic_lock:{matched_hash}"
+                        parts = matched_redis_key.split(":")
+                        if len(parts) == 3:
+                            # format: semantic_cache:project_id:query_hash
+                            matched_lock_key = f"semantic_lock:{parts[1]}:{parts[2]}"
+                        else:
+                            # format: semantic_cache:query_hash
+                            matched_lock_key = f"semantic_lock:{parts[1]}"
+                            
                         if not redis_cache_service.redis.exists(matched_lock_key):
                             # Không có lock và không có cache -> lock bị giải phóng nhưng cache lỗi/không ghi
                             break
@@ -98,15 +121,19 @@ class SemanticCacheManager:
         # Fallback: Trả về None để gọi trực tiếp LLM mà không giữ lock
         return None, False
 
-    def save_sync(self, query: str, content: str, prompt_tokens: int, completion_tokens: int, query_hash: str | None = None) -> None:
+    def save_sync(self, query: str, content: str, prompt_tokens: int, completion_tokens: int, query_hash: str | None = None, project_id: Optional[str] = None) -> None:
         """
         Lưu câu trả lời vào Semantic Cache đồng bộ (chạy trong worker Celery).
         """
         if not query_hash:
             query_hash = blake3(query.encode("utf-8")).hexdigest()
 
-        redis_key = f"semantic_cache:{query_hash}"
-        lock_key = f"semantic_lock:{query_hash}"
+        if project_id:
+            redis_key = f"semantic_cache:{project_id}:{query_hash}"
+            lock_key = f"semantic_lock:{project_id}:{query_hash}"
+        else:
+            redis_key = f"semantic_cache:{query_hash}"
+            lock_key = f"semantic_lock:{query_hash}"
 
         try:
             # 1. Sinh vector embedding cho câu hỏi
@@ -133,6 +160,8 @@ class SemanticCacheManager:
                     "query": query,
                     "redis_key": redis_key
                 }
+                if project_id:
+                    qdrant_payload["project_id"] = str(project_id)
                 # Sử dụng query_hash (UUID-like) làm ID trong Qdrant
                 # Vì Qdrant yêu cầu ID định dạng UUID, ta sẽ chuyển query_hash thành định dạng UUID
                 # Định dạng hex 32 ký tự của blake3 có thể chuyển trực tiếp thành UUID
@@ -149,15 +178,18 @@ class SemanticCacheManager:
             logger.error(f"Lỗi khi thực hiện lưu Semantic Cache: {e}")
         finally:
             # Luôn giải phóng lock sau khi ghi xong
-            self.release_lock(query_hash)
+            self.release_lock(query_hash, project_id=project_id)
 
-    def release_lock(self, query_hash: str) -> None:
+    def release_lock(self, query_hash: str, project_id: Optional[str] = None) -> None:
         """
         Giải phóng khóa lock nhanh chóng của câu hỏi.
         """
         try:
             if redis_cache_service.redis:
-                lock_key = f"semantic_lock:{query_hash}"
+                if project_id:
+                    lock_key = f"semantic_lock:{project_id}:{query_hash}"
+                else:
+                    lock_key = f"semantic_lock:{query_hash}"
                 redis_cache_service.redis.delete(lock_key)
                 logger.info(f"Đã giải phóng lock thành công cho lock_key={lock_key}")
         except Exception as e:
