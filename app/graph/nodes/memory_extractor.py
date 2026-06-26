@@ -4,6 +4,7 @@ import uuid
 from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
+from app.core.llm_factory import get_llm_client
 from app.config.settings import settings
 from app.core.database import SessionLocal
 from app.graph.state.agent_state import AgentState
@@ -12,7 +13,7 @@ from app.shared.enums import MemoryType
 
 logger = logging.getLogger(__name__)
 
-async def memory_extractor_node(state: AgentState) -> dict:
+async def memory_extractor_node(state: AgentState, config: dict = None) -> dict:
     """
     Memory Extractor Node: Analyzes the execution turns history to extract
     permanent facts and user preferences, then stores them in LTM.
@@ -61,11 +62,7 @@ Example output format:
 """
 
     # 3. Call LLM to extract memories
-    llm = ChatOpenAI(
-        api_key=settings.OPENAI_API_KEY,
-        model=settings.CHAT_MODEL_NAME,
-        temperature=0.0
-    )
+    llm = get_llm_client(config, streaming=False)
 
     messages = [
         SystemMessage(content=system_prompt),

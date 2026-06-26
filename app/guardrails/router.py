@@ -122,13 +122,14 @@ async def check_query_relevance(query: str, project_files: List[str], project_id
     
     try:
         llm = ChatOpenAI(
-            api_key=settings.OPENAI_API_KEY,
+            api_key=settings.LITELLM_PROXY_KEY,
+            base_url=settings.LITELLM_PROXY_URL,
             model="gpt-4o-mini",
             temperature=0.0,
             max_tokens=20,
             request_timeout=2.0,
         )
-        
+
         files_list_items = []
         for f in project_files:
             if isinstance(f, dict):

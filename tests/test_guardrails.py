@@ -60,8 +60,16 @@ async def test_check_query_relevance_empty_files():
 
 @pytest.mark.anyio
 async def test_check_query_relevance_greeting():
-    res = await check_query_relevance("Hello there!", ["policy.pdf"])
-    assert res is False
+    # Mock ChatOpenAI ainvoke
+    mock_response = AsyncMock()
+    mock_response.content = "OUT_SCOPE"
+    
+    with patch("app.guardrails.router.ChatOpenAI") as mock_chat:
+        mock_instance = mock_chat.return_value
+        mock_instance.ainvoke = AsyncMock(return_value=mock_response)
+        
+        res = await check_query_relevance("Hello there!", ["policy.pdf"])
+        assert res is False
 
 @pytest.mark.anyio
 async def test_check_query_relevance_in_scope():

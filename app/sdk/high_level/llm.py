@@ -9,10 +9,22 @@ from app.sdk.low_level.retrieval import log_sdk_operation
 
 class LLMSDK:
     def __init__(self, config=None):
-        api_key = settings.OPENAI_API_KEY
-        if not api_key:
-            api_key = os.environ.get("OPENAI_API_KEY", "placeholder")
-        self.client = AsyncOpenAI(api_key=api_key)
+        user_api_keys = {}
+        if config:
+            configurable = config.get("configurable", config)
+            if isinstance(configurable, dict):
+                user_api_keys = configurable.get("user_api_keys") or {}
+
+        # 1. BYOK Path: User has configured their own key
+        if "openai" in user_api_keys and user_api_keys["openai"]:
+            api_key = user_api_keys["openai"]
+            base_url = None
+        # 2. Proxy Path (Default): Use platform LiteLLM Proxy
+        else:
+            api_key = settings.LITELLM_PROXY_KEY
+            base_url = settings.LITELLM_PROXY_URL
+
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = settings.CHAT_MODEL_NAME
 
     async def extract_many(

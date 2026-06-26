@@ -25,15 +25,18 @@ async def summary_handler(
     if not document.markdown_content:
         raise ValueError(f"Document {document_id} has no markdown content")
     
-    if not settings.OPENAI_API_KEY:
-        logger.warning("OpenAI API key not configured, using placeholder summary")
+    if not settings.LITELLM_PROXY_KEY:
+        logger.warning("LiteLLM Proxy key not configured, using placeholder summary")
         content_length = len(document.markdown_content)
-        summary = f"Document with {content_length} characters (OpenAI not configured)"
+        summary = f"Document with {content_length} characters (LiteLLM Proxy not configured)"
         pipeline_state.global_summary = summary
         return {"global_summary": summary}
     
     try:
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        client = AsyncOpenAI(
+            api_key=settings.LITELLM_PROXY_KEY,
+            base_url=settings.LITELLM_PROXY_URL
+        )
         
         content = document.markdown_content
         max_chars = 10000  # Approx 4000 tokens

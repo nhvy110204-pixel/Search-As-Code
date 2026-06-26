@@ -85,15 +85,15 @@ async def test_save_and_recall_memory(mock_upsert, mock_embed, db_session, test_
 
 
 @pytest.mark.anyio
-@patch("app.graph.nodes.memory_extractor.ChatOpenAI")
+@patch("app.graph.nodes.memory_extractor.get_llm_client")
 @patch("app.services.agent.memory_service.embed")
-async def test_extractor_node_saves_memories(mock_embed, mock_chat_openai, db_session, test_user):
+async def test_extractor_node_saves_memories(mock_embed, mock_get_llm_client, db_session, test_user):
     # Mock SDK embedding
     mock_embed.return_value = [[0.2] * 1536]
     
     # Mock ChatOpenAI to return a JSON array string representing extracted facts
     mock_llm_instance = MagicMock()
-    mock_chat_openai.return_value = mock_llm_instance
+    mock_get_llm_client.return_value = mock_llm_instance
     
     mock_response = MagicMock()
     mock_response.content = '["User prefers pure python standard libraries.", "The database port is 5432."]'
@@ -130,7 +130,7 @@ async def test_extractor_node_saves_memories(mock_embed, mock_chat_openai, db_se
 
 @pytest.mark.anyio
 @patch("app.graph.nodes.reasoner.get_llm_client")
-@patch("app.graph.nodes.memory_extractor.ChatOpenAI")
+@patch("app.graph.nodes.memory_extractor.get_llm_client")
 @patch("app.services.agent.memory_service.embed")
 async def test_agent_graph_full_memory_loop(mock_embed, mock_extractor_llm, mock_reasoner_client, db_session, test_user):
     # Mock embeddings

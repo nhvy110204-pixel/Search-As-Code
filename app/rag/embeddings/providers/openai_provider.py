@@ -14,10 +14,10 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     """OpenAI-based embedding provider."""
 
     def __init__(self):
-        if not settings.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY is not configured in settings")
-            
-        self._client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self._client = OpenAI(
+            api_key=settings.LITELLM_PROXY_KEY,
+            base_url=settings.LITELLM_PROXY_URL
+        )
         self._model_name = settings.EMBEDDING_MODEL_NAME
         self._dimension = settings.EMBEDDING_DIMENSION
 

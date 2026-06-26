@@ -11,14 +11,12 @@ def get_llm_client(
     streaming: bool = True
 ) -> ChatOpenAI:
     """
-    Factory to resolve the correct LLM client dynamically based on configurable context:
+    Factory to resolve the LLM client:
     1. User's personal API key (BYOK) if available.
-    2. Shared LiteLLM Proxy if configured.
-    3. Host default OpenAI API key as fallback.
+    2. Shared LiteLLM Proxy as the default platform provider.
     """
     user_api_keys = {}
     if config:
-        # Support both direct configurable dict or full langgraph config dict
         configurable = config.get("configurable", config)
         if isinstance(configurable, dict):
             user_api_keys = configurable.get("user_api_keys") or {}
@@ -35,21 +33,11 @@ def get_llm_client(
             streaming=streaming
         )
 
-    # 2. Proxy Path: LiteLLM Proxy is configured
-    if settings.LITELLM_PROXY_URL and settings.LITELLM_PROXY_KEY:
-        logger.info(f"Using platform LiteLLM Proxy at {settings.LITELLM_PROXY_URL} for model {model}")
-        return ChatOpenAI(
-            api_key=settings.LITELLM_PROXY_KEY,
-            base_url=settings.LITELLM_PROXY_URL,
-            model=model,
-            temperature=0.0,
-            streaming=streaming
-        )
-
-    # 3. Fallback Path: Default host key
-    logger.info(f"Using default platform OpenAI API key for model {model}")
+    # 2. Proxy Path (Default): Use platform LiteLLM Proxy
+    logger.info(f"Using platform LiteLLM Proxy at {settings.LITELLM_PROXY_URL} for model {model}")
     return ChatOpenAI(
-        api_key=settings.OPENAI_API_KEY,
+        api_key=settings.LITELLM_PROXY_KEY,
+        base_url=settings.LITELLM_PROXY_URL,
         model=model,
         temperature=0.0,
         streaming=streaming

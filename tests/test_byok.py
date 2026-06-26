@@ -33,7 +33,6 @@ def test_decryption_empty_and_invalid():
 def test_llm_factory_routing(mock_settings):
     # Setup global settings mocks
     mock_settings.CHAT_MODEL_NAME = "gpt-4o-mini"
-    mock_settings.OPENAI_API_KEY = "global-openai-key"
     mock_settings.LITELLM_PROXY_URL = "http://litellm-proxy"
     mock_settings.LITELLM_PROXY_KEY = "proxy-key"
 
@@ -43,19 +42,11 @@ def test_llm_factory_routing(mock_settings):
     assert client_byok.openai_api_key.get_secret_value() == "user-key-123"
     assert client_byok.openai_api_base is None
 
-    # Scenario B: User key is absent, but platform LiteLLM Proxy is configured
-    config_proxy = {"configurable": {}}
+    # Scenario B: User key is absent, default to LiteLLM Proxy
+    config_proxy = {}
     client_proxy = get_llm_client(config_proxy)
     assert client_proxy.openai_api_key.get_secret_value() == "proxy-key"
     assert client_proxy.openai_api_base == "http://litellm-proxy"
-
-    # Scenario C: Both user key and proxy config are missing
-    mock_settings.LITELLM_PROXY_URL = None
-    mock_settings.LITELLM_PROXY_KEY = None
-    config_fallback = {}
-    client_fallback = get_llm_client(config_fallback)
-    assert client_fallback.openai_api_key.get_secret_value() == "global-openai-key"
-    assert client_fallback.openai_api_base is None
 
 @pytest.mark.anyio
 @patch("app.services.core.redis_service.redis_cache_service.redis")

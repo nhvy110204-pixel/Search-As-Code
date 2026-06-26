@@ -22,10 +22,26 @@ class ChatCompletionProvider(Protocol):
 
 
 class OpenAIChatCompletionProvider:
-    def __init__(self):
-        if not settings.OPENAI_API_KEY:
-            raise RuntimeError("OPENAI_API_KEY is not configured")
-        self._client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    def __init__(self, config: dict | None = None):
+        user_api_keys = {}
+        if config:
+            configurable = config.get("configurable", config)
+            if isinstance(configurable, dict):
+                user_api_keys = configurable.get("user_api_keys") or {}
+
+        # 1. BYOK Path: User has configured their own key
+        if "openai" in user_api_keys and user_api_keys["openai"]:
+            api_key = user_api_keys["openai"]
+            base_url = None
+        # 2. Proxy Path (Default): Use platform LiteLLM Proxy
+        else:
+            api_key = settings.LITELLM_PROXY_KEY
+            base_url = settings.LITELLM_PROXY_URL
+
+        if not api_key:
+            raise RuntimeError("API key is not configured")
+
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._model_name = settings.CHAT_MODEL_NAME
 
     async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[ChatStreamChunk]:
