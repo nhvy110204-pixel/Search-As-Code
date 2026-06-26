@@ -11,6 +11,7 @@ from app.shared.enums import ProjectStatus
 from .base import Base, AIEntityMixin
 
 if TYPE_CHECKING:
+    from .audit_log import AuditLog
     from .chat_session import ChatSession
     from .document import Document
     from .sac_task import SACTask
@@ -47,6 +48,7 @@ class Project(AIEntityMixin, Base):
     )
 
     owner: Mapped["User"] = relationship("User", back_populates="projects")
+    audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="project", cascade="all, delete-orphan")
     documents: Mapped[List["Document"]] = relationship(
         "Document",
         back_populates="project",

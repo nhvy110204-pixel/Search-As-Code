@@ -10,6 +10,7 @@ from app.repositories.document_chunk_link import DocumentChunkLinkRepository
 from app.repositories.ingestion_task import IngestionTaskRepository
 from app.repositories.chat_session import ChatSessionRepository
 from app.repositories.chat_message import ChatMessageRepository
+from app.repositories.audit_log import AuditLogRepository
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class UnitOfWork(AbstractContextManager):
         self.ingestion_tasks = IngestionTaskRepository(self.db)
         self.chat_sessions = ChatSessionRepository(self.db)
         self.chat_messages = ChatMessageRepository(self.db)
+        self.audit_logs = AuditLogRepository(self.db)
 
     def __enter__(self):
         logger.debug("Entering UnitOfWork (read_only=%s)", self.read_only)

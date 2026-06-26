@@ -7,6 +7,7 @@ from .base import Base, AIEntityMixin
 
 if TYPE_CHECKING:
     from .api_key import APIKey
+    from .audit_log import AuditLog
     from .chat_session import ChatSession
     from .document import Document
     from .project import Project
@@ -26,6 +27,7 @@ class User(AIEntityMixin, Base):
     encrypted_custom_api_keys: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     api_keys: Mapped[List["APIKey"]] = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+    audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
     chat_sessions: Mapped[List["ChatSession"]] = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
     tasks: Mapped[List["SACTask"]] = relationship("SACTask", back_populates="user", passive_deletes=True)
     documents: Mapped[List["Document"]] = relationship("Document", back_populates="user", cascade="all, delete-orphan")
