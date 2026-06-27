@@ -52,11 +52,11 @@ services:
     ports:
       - "4000:4000"
     volumes:
-      - ./litellm-config.yaml:/app/config.yaml
+      - .:/app/config_dir
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LITELLM_MASTER_KEY=${LITELLM_PROXY_KEY:-proxy-key}
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    entrypoint: ["litellm", "--config", "/app/config_dir/litellm-config.yaml", "--port", "4000"]
     networks:
       - ragflash-network
 
