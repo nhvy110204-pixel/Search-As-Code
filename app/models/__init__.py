@@ -1,5 +1,6 @@
 from .base import Base
 from .user import User
+from .audit_log import AuditLog
 from .api_key import APIKey
 from .auth_refresh_token import AuthRefreshToken
 from .user_preference import UserPreference
@@ -22,6 +23,7 @@ from .span import Span
 __all__ = [
     "Base",
     "User",
+    "AuditLog",
     "APIKey",
     "AuthRefreshToken",
     "UserPreference",

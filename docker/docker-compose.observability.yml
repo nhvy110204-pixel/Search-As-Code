@@ -2,6 +2,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: ragflash-prometheus
+    restart: unless-stopped
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./prometheus/alerting_rules.yml:/etc/prometheus/alerting_rules.yml
@@ -21,6 +22,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: ragflash-grafana
+    restart: unless-stopped
     ports:
       - "3010:3000"
     volumes:
@@ -34,9 +36,88 @@ services:
     networks:
       - ragflash-network
 
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: ragflash-langfuse
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:langfuse@langfuse-db:5432/langfuse
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://default:1@clickhouse:9000/langfuse
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=1
+      - NEXTAUTH_SECRET=my-secret-key-12345
+      - NEXTAUTH_URL=http://localhost:3000
+      - SALT=my-salt-key-12345
+      - TELEMETRY_ENABLED=false
+      - CLICKHOUSE_CLUSTER_ENABLED=false
+      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse
+      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
+      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minio
+      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=miniosecret
+      - LANGFUSE_S3_EVENT_UPLOAD_REGION=auto
+    depends_on:
+      - langfuse-db
+      - clickhouse
+      - minio
+      - prometheus
+    networks:
+      - ragflash-network
+
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: ragflash-langfuse-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=langfuse
+      - POSTGRES_DB=langfuse
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    networks:
+      - ragflash-network
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: ragflash-clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=1
+      - CLICKHOUSE_DB=langfuse
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - ragflash-network
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: ragflash-minio
+    restart: unless-stopped
+    environment:
+      - MINIO_ROOT_USER=minio
+      - MINIO_ROOT_PASSWORD=miniosecret
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    ports:
+      - "9005:9000"  # API
+      - "9006:9001"  # Console
+    volumes:
+      - minio_data:/data
+    networks:
+      - ragflash-network
+
 volumes:
   prometheus_data:
   grafana_data:
+  langfuse_db_data:
+  clickhouse_data:
+  minio_data:
 
 networks:
   ragflash-network:

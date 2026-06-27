@@ -41,7 +41,11 @@ class Settings(BaseSettings):
     TRACING_ENABLED: bool = False
     OTEL_EXPORTER_OTLP_ENDPOINT: Optional[str] = None
     OTEL_SERVICE_NAME: str = "ragflash-backend"
-    LANGFUSE_API_KEY: Optional[str] = None
+    LANGFUSE_ENABLED: bool = False
+    LANGFUSE_PUBLIC_KEY: Optional[str] = None
+    LANGFUSE_SECRET_KEY: Optional[str] = None
+    LANGFUSE_HOST: str = "http://localhost:3000"
+    TRACE_SOURCE_SNIPPET_MAX_CHARS: int = 1000
 
     TRACING_BATCH_MAX_QUEUE_SIZE: int = 2048
     TRACING_BATCH_SCHEDULE_DELAY_MS: int = 5000

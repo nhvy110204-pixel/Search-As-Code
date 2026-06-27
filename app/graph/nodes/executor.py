@@ -3,10 +3,12 @@ from langchain_core.messages import HumanMessage
 from app.graph.state.agent_state import AgentState, TurnRecord, TurnSummary
 from app.guardrails.sandbox import SandboxExecutor, validate_code
 from app.core.database import SessionLocal
+from app.core.langfuse_tracing import flush_sdk_operations_to_langfuse
 from app.models.sdk_operation import SDKOperation
 from sqlalchemy import select, func
 from pathlib import Path
 import os
+import uuid
 
 async def executor_node(state: AgentState) -> dict:
     """
@@ -111,6 +113,10 @@ async def executor_node(state: AgentState) -> dict:
         action_summary=action_summary,
         outcome_summary=outcome_summary,
     )
+
+    # Flush SDK operations logged during this turn to Langfuse
+    task_uuid = uuid.UUID(state["task_id"])
+    flush_sdk_operations_to_langfuse(task_uuid, turn_num)
 
     # Build observation message to feed back to REASONER
     obs_content = _build_observation(result, state_files, turn_num)

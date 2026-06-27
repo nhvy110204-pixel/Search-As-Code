@@ -18,6 +18,7 @@ from app.core.logger import service_boundary
 from app.models.chat_stream_run import ChatStreamRun
 from app.models.user import User
 from app.observability.metrics import record_chat_stream_started
+from app.core.langfuse_tracing import get_langfuse_callback
 from app.repositories.chat_message import ChatMessageRepository
 from app.repositories.chat_stream_run import ChatStreamRunRepository
 from app.schemas.dto.chat import ChatStreamRequest, PreparedChatStream
@@ -279,6 +280,15 @@ class ChatStreamService:
         # Keep track of when nodes start to calculate duration_ms
         node_start_times = {}
 
+        # Initialize Langfuse callback handler
+        langfuse_callback = get_langfuse_callback(
+            user_id=prepared.user_id,
+            session_id=prepared.session_id,
+            trace_id=prepared.run_id,
+            project_id=project_id,
+            assistant_message_id=prepared.assistant_message_id
+        )
+
         try:
             # Run LangGraph using astream_events
             async for event in agent_graph.astream_events(
@@ -288,7 +298,8 @@ class ChatStreamService:
                     "configurable": {
                         "thread_id": str(prepared.session_id),
                         "user_api_keys": decrypted_keys
-                    }
+                    },
+                    "callbacks": [langfuse_callback] if langfuse_callback else []
                 }
             ):
                 # Check for remote cancellation flag and connection disconnects
