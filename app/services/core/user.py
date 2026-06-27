@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 class UserService(BaseService[User, UserCreate, UserUpdate]):
     """User domain service with authentication and pagination support."""
 
-    def __init__(self, repository: UserRepository):
-        super().__init__(repository)
+    def __init__(self, repository: UserRepository, uow=None):
+        super().__init__(repository, uow)
 
     @service_boundary("Create User")
-    def create(self, obj_in: UserCreate) -> User:
+    def create(self, obj_in: UserCreate, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> User:
         """Create user with password hashing (business logic)."""
         hashed = get_password_hash(obj_in.password)
         internal = UserCreateInternal(
@@ -36,7 +36,23 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
             hashed_password=hashed,
             is_active=obj_in.is_active,
         )
-        return self.repo.create_user(internal)
+        user = self.repo.create_user(internal)
+        if user and self.uow:
+            from app.core.audit import log_audit_event
+            log_audit_event(
+                uow=self.uow,
+                user_id=user.id,
+                action="user.register",
+                status="success",
+                context={
+                    "user_id": str(user.id),
+                    "username": user.username,
+                    "email": user.email
+                },
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        return user
 
     @service_boundary("Authenticate User")
     def authenticate(self, identifier: str, password: str) -> Optional[User]:
@@ -59,8 +75,20 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
         return UserListResponse(items=items, total=total, page=page, page_size=page_size)
 
     @service_boundary("Update User")
-    def update(self, id: UUID, obj_in: UserUpdate | Dict[str, Any]) -> Optional[User]:
+    def update(
+        self,
+        id: UUID,
+        obj_in: UserUpdate | Dict[str, Any],
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> Optional[User]:
         """Update user and invalidate their Redis session cache."""
+        is_updating_keys = False
+        if isinstance(obj_in, dict):
+            is_updating_keys = "encrypted_custom_api_keys" in obj_in
+        elif hasattr(obj_in, "encrypted_custom_api_keys"):
+            is_updating_keys = obj_in.encrypted_custom_api_keys is not None
+
         user = super().update(id, obj_in)
         if user:
             try:
@@ -69,10 +97,31 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
                     r.delete(f"user:session:{id}")
             except Exception as e:
                 logger.warning("Failed to invalidate user session cache: %s", e)
+            if self.uow and is_updating_keys:
+                from app.core.audit import log_audit_event
+                log_audit_event(
+                    uow=self.uow,
+                    user_id=id,
+                    action="user.update_api_keys",
+                    status="success",
+                    context={
+                        "user_id": str(id),
+                        "message": "Custom third-party API keys updated"
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
         return user
 
     @service_boundary("Delete User")
-    def delete(self, id: UUID, hard: bool = False) -> bool:
+    def delete(
+        self,
+        id: UUID,
+        actor_id: Optional[UUID] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        hard: bool = False
+    ) -> bool:
         """Delete user and invalidate their Redis session cache."""
         ok = super().delete(id, hard)
         if ok:
@@ -82,4 +131,59 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
                     r.delete(f"user:session:{id}")
             except Exception as e:
                 logger.warning("Failed to invalidate user session cache: %s", e)
+            if self.uow:
+                from app.core.audit import log_audit_event
+                log_audit_event(
+                    uow=self.uow,
+                    user_id=actor_id or id,
+                    action="user.delete",
+                    status="success",
+                    context={
+                        "target_user_id": str(id),
+                        "hard_delete": hard
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
         return ok
+
+    @service_boundary("Change Password")
+    def change_password(
+        self,
+        id: UUID,
+        old_password: str,
+        new_password: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> bool:
+        """Change user password securely and write audit logs."""
+        user = self.get(id)
+        if not user or not verify_password(old_password, user.hashed_password):
+            if self.uow:
+                from app.core.audit import log_audit_event
+                log_audit_event(
+                    uow=self.uow,
+                    user_id=id,
+                    action="user.password_change",
+                    status="failed",
+                    context={"reason": "Incorrect old password"},
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
+            return False
+
+        hashed = get_password_hash(new_password)
+        self.repo.update(user, {"hashed_password": hashed})
+
+        if self.uow:
+            from app.core.audit import log_audit_event
+            log_audit_event(
+                uow=self.uow,
+                user_id=id,
+                action="user.password_change",
+                status="success",
+                context={},
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        return True

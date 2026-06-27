@@ -13,7 +13,7 @@ class AuditLogRepository(BaseRepository[AuditLog, object, object]):
     def create(
         self,
         *,
-        user_id: UUID,
+        user_id: Optional[UUID] = None,
         project_id: Optional[UUID] = None,
         action: str,
         status: str,

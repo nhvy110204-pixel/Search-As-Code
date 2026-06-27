@@ -126,6 +126,20 @@ class ChatStreamOutcomeHandler:
                 run = self.stream_run_repo.get(prepared.run_id)
                 if run:
                     self.stream_run_repo.update(run, run_values)
+                if run_values.get("status") == ChatStreamStatus.DISCONNECTED:
+                    from app.core.audit import log_audit_event
+                    log_audit_event(
+                        uow=uow,
+                        user_id=prepared.user_id,
+                        project_id=prepared.project_id,
+                        action="chat.cancel",
+                        status="success",
+                        context={
+                            "session_id": str(prepared.session_id),
+                            "run_id": str(prepared.run_id),
+                            "duration_ms": run_values.get("duration_ms", 0)
+                        }
+                    )
 
             redis_cache_service.invalidate_history(prepared.session_id)
         finally:

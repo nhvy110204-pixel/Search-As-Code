@@ -1,8 +1,10 @@
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.exc import IntegrityError
 
+from app.api.dependencies.auth import get_current_user
+from app.models.user import User
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
 from app.schemas.dto.document import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentListResponse
@@ -14,13 +16,20 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 
 def get_document_service(db=Depends(get_db)):
     with UnitOfWork(db) as uow:
-        yield DocumentService(repository=uow.documents)
+        yield DocumentService(repository=uow.documents, uow=uow)
 
 
 @router.post("/", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
-def create_document(payload: DocumentCreate, service: DocumentService = Depends(get_document_service)):
+def create_document(
+    payload: DocumentCreate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service)
+):
     try:
-        return service.create(payload)
+        client_ip = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent")
+        return service.create(payload, ip_address=client_ip, user_agent=user_agent)
     except IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -80,10 +89,20 @@ def update_document(
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
     document_id: uuid.UUID,
+    request: Request,
     hard: bool = Query(False, description="True để xóa cứng khỏi DB, False để soft delete"),
+    current_user: User = Depends(get_current_user),
     service: DocumentService = Depends(get_document_service)
 ):
-    success = service.delete(id=document_id, hard=hard)
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    success = service.delete(
+        id=document_id,
+        user_id=current_user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        hard=hard
+    )
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

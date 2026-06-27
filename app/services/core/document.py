@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
-    def __init__(self, repository: DocumentRepository):
-        super().__init__(repository)
+    def __init__(self, repository: DocumentRepository, uow=None):
+        super().__init__(repository, uow)
         self.doc_repo = repository
 
     def _invalidate_cache(self, project_id: uuid.UUID) -> None:
@@ -27,11 +27,45 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
             logger.warning(f"Failed to invalidate project documents metadata cache for project_id={project_id}: {e}")
 
     @service_boundary("Create Entity")
-    def create(self, obj_in: DocumentCreate) -> Document:
-        doc = super().create(obj_in)
-        if doc and doc.project_id:
-            self._invalidate_cache(doc.project_id)
-        return doc
+    def create(self, obj_in: DocumentCreate, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Document:
+        try:
+            doc = super().create(obj_in)
+            if doc and doc.project_id:
+                self._invalidate_cache(doc.project_id)
+            if self.uow:
+                from app.core.audit import log_audit_event
+                log_audit_event(
+                    uow=self.uow,
+                    user_id=obj_in.user_id,
+                    project_id=obj_in.project_id,
+                    action="document.upload",
+                    status="success",
+                    context={
+                        "document_id": str(doc.id) if doc else None,
+                        "file_name": obj_in.file_name,
+                        "file_size_bytes": obj_in.file_size_bytes
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
+            return doc
+        except Exception as e:
+            if self.uow:
+                from app.core.audit import log_audit_event
+                log_audit_event(
+                    uow=self.uow,
+                    user_id=obj_in.user_id,
+                    project_id=obj_in.project_id,
+                    action="document.upload_failed",
+                    status="failed",
+                    context={
+                        "file_name": obj_in.file_name,
+                        "error": str(e)
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
+            raise e
 
     @service_boundary("Update Entity")
     def update(self, id: uuid.UUID, obj_in: DocumentUpdate | Dict[str, Any]) -> Optional[Document]:
@@ -48,7 +82,14 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
         return updated_doc
 
     @service_boundary("Delete Entity")
-    def delete(self, id: uuid.UUID, hard: bool = False) -> bool:
+    def delete(
+        self,
+        id: uuid.UUID,
+        user_id: Optional[uuid.UUID] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        hard: bool = False
+    ) -> bool:
         doc = self.get(id)
         if not doc:
             return False
@@ -56,6 +97,22 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
         success = super().delete(id, hard=hard)
         if success and project_id:
             self._invalidate_cache(project_id)
+        if self.uow and success:
+            from app.core.audit import log_audit_event
+            log_audit_event(
+                uow=self.uow,
+                user_id=user_id,
+                project_id=project_id,
+                action="document.delete",
+                status="success",
+                context={
+                    "document_id": str(id),
+                    "file_name": doc.file_name,
+                    "hard_delete": hard
+                },
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
         return success
 
     @service_boundary("Get Documents Paginated")

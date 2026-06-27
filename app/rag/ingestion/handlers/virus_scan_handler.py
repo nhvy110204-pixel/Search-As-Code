@@ -77,11 +77,28 @@ async def virus_scan_handler(
     # TODO: Implement actual virus scanning logic here
     # Example structure for future implementation:
     #
+    # from app.config.settings import settings
+    # from app.core.audit import log_audit_event
+    # from app.shared.enums import DocumentStatus
+    #
     # if settings.VIRUS_SCAN_ENABLED:
-    #     scan_result = await scan_file(document.file_content, document.file_name)
+    #     scan_result = await scan_file(document.storage_path, document.file_name)
     #     if scan_result.is_infected:
-    #         document.status = DocumentStatus.QUARANTINED
+    #         document.status = DocumentStatus.FAILED
+    #         uow.documents.update(document, {})
     #         logger.warning(f"Virus detected in document {document_id}")
+    #         log_audit_event(
+    #             uow=uow,
+    #             user_id=document.user_id,
+    #             project_id=project_id,
+    #             action="virus.quarantine",
+    #             status="success",
+    #             context={
+    #                 "document_id": str(document_id),
+    #                 "file_name": document.file_name,
+    #                 "threats": scan_result.threats
+    #             }
+    #         )
     #         return {"scan_result": "infected", "threats": scan_result.threats}
     #     else:
     #         logger.info(f"Virus scan passed for document {document_id}")

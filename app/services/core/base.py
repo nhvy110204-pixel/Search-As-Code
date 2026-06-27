@@ -9,8 +9,9 @@ UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 
 class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    def __init__(self, repository):
+    def __init__(self, repository, uow=None):
         self.repo = repository
+        self.uow = uow
 
     @service_boundary("Get Entity")
     def get(self, id: UUID, include_deleted: bool = False, options: List = None) -> Optional[ModelType]:

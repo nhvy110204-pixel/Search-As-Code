@@ -11,6 +11,7 @@ from app.repositories.ingestion_task import IngestionTaskRepository
 from app.repositories.chat_session import ChatSessionRepository
 from app.repositories.chat_message import ChatMessageRepository
 from app.repositories.audit_log import AuditLogRepository
+from app.repositories.api_key import APIKeyRepository
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class UnitOfWork(AbstractContextManager):
         self.chat_sessions = ChatSessionRepository(self.db)
         self.chat_messages = ChatMessageRepository(self.db)
         self.audit_logs = AuditLogRepository(self.db)
+        self.api_keys = APIKeyRepository(self.db)
 
     def __enter__(self):
         logger.debug("Entering UnitOfWork (read_only=%s)", self.read_only)

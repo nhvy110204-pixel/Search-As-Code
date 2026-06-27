@@ -66,8 +66,20 @@ def _build_token_response(db: Session, user, request: Request) -> TokenResponse:
 @router.post("/login", response_model=TokenResponse)
 def login(payload: UserLogin, request: Request, db: Session = Depends(get_db)):
     with UnitOfWork(db) as uow:
-        user = UserService(repository=uow.users).authenticate(payload.identifier, payload.password)
+        user = UserService(repository=uow.users, uow=uow).authenticate(payload.identifier, payload.password)
         if not user:
+            from app.core.audit import log_audit_event
+            client_ip = _client_ip(request)
+            user_agent = request.headers.get("user-agent")
+            log_audit_event(
+                uow=uow,
+                user_id=None,
+                action="auth.login_failed",
+                status="failed",
+                context={"identifier": payload.identifier},
+                ip_address=client_ip,
+                user_agent=user_agent
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",

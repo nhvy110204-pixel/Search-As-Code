@@ -158,6 +158,19 @@ INGESTION_CHUNK_DEDUP_RATIO = Gauge(
     ['document_id']
 )
 
+# Audit log metrics
+AUDIT_LOG_EVENTS_TOTAL = Counter(
+    'audit_log_events_total',
+    'Total audit log events recorded',
+    ['action', 'status']
+)
+
+AUDIT_LOG_FAILED_TOTAL = Counter(
+    'audit_log_failed_total',
+    'Total failed audit log events',
+    ['action']
+)
+
 class ASGIMetricsMiddleware:
     """Pure ASGI Middleware: Đảm bảo luồng Stream Token,
 
@@ -342,3 +355,14 @@ def set_active_tasks(count: int):
 def set_chunk_dedup_ratio(document_id: str, ratio: float):
     """Set the chunk deduplication ratio for a document."""
     INGESTION_CHUNK_DEDUP_RATIO.labels(document_id=document_id).set(ratio)
+
+
+# Audit log metric helper functions
+def record_audit_log_event(action: str, status: str):
+    """Record audit log event in Prometheus."""
+    AUDIT_LOG_EVENTS_TOTAL.labels(action=action, status=status).inc()
+
+
+def record_audit_log_failed(action: str):
+    """Record failed audit log event in Prometheus."""
+    AUDIT_LOG_FAILED_TOTAL.labels(action=action).inc()

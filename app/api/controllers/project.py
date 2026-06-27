@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies.auth import get_current_user
@@ -23,12 +23,13 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 
 def get_project_service(db=Depends(get_db)):
     with UnitOfWork(db) as uow:
-        yield ProjectService(repository=uow.projects)
+        yield ProjectService(repository=uow.projects, uow=uow)
 
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(
     payload: ProjectCreateRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
 ):
@@ -40,7 +41,9 @@ def create_project(
             status=payload.status,
             settings=payload.settings,
         )
-        return service.create(create_payload)
+        client_ip = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent")
+        return service.create(create_payload, ip_address=client_ip, user_agent=user_agent)
     except IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -102,6 +105,7 @@ def update_project(
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(
     project_id: uuid.UUID,
+    request: Request,
     hard: bool = Query(False, description="True to hard delete, false to soft delete"),
     current_user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
@@ -112,7 +116,9 @@ def delete_project(
     if existing.owner_user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project does not belong to user")
 
-    success = service.delete(id=project_id, hard=hard)
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    success = service.delete(id=project_id, user_id=current_user.id, ip_address=client_ip, user_agent=user_agent, hard=hard)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return None

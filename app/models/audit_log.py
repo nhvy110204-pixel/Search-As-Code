@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Optional, TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, DateTime, text
+from sqlalchemy import ForeignKey, String, text, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 class AuditLog(AuditLogMixin, Base):
     __tablename__ = "audit_logs"
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True
     )
     project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -55,5 +55,12 @@ class AuditLog(AuditLogMixin, Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="audit_logs")
+    user: Mapped[Optional["User"]] = relationship("User", back_populates="audit_logs")
     project: Mapped[Optional["Project"]] = relationship("Project", back_populates="audit_logs")
+
+    __table_args__ = (
+        Index("idx_audit_logs_user_created", "user_id", "created_at"),
+        Index("idx_audit_logs_project_created", "project_id", "created_at"),
+        Index("idx_audit_logs_action_created", "action", "created_at"),
+        Index("idx_audit_logs_status_created", "status", "created_at"),
+    )
