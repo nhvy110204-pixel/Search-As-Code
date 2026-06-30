@@ -7,7 +7,7 @@ from app.api.dependencies.auth import get_current_user
 from app.models.user import User
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
-from app.services.core.user import UserService
+from app.services.user.user_service import UserService
 from app.schemas.dto.user import UserCreate, UserResponse, UserListResponse, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])

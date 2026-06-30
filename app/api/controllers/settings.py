@@ -5,7 +5,7 @@ from app.api.dependencies.auth import get_current_user
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
 from app.models.user import User
-from app.services.core.settings import SettingsService
+from app.services.settings.settings_service import SettingsService
 from app.schemas.dto.settings import SettingsResponse, SettingsUpdate
 
 router = APIRouter(prefix="/settings", tags=["settings"])

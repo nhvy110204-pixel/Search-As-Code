@@ -7,7 +7,7 @@ from app.schemas.dto.document import DocumentCreate, DocumentUpdate, DocumentRes
 from app.services.core.base import BaseService
 from app.core.logger import service_boundary
 from app.services.core.redis_service import redis_cache_service
-
+from app.core.audit import log_audit_event
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +33,6 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
             if doc and doc.project_id:
                 self._invalidate_cache(doc.project_id)
             if self.uow:
-                from app.core.audit import log_audit_event
                 log_audit_event(
                     uow=self.uow,
                     user_id=obj_in.user_id,
@@ -51,7 +50,6 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
             return doc
         except Exception as e:
             if self.uow:
-                from app.core.audit import log_audit_event
                 log_audit_event(
                     uow=self.uow,
                     user_id=obj_in.user_id,
@@ -98,7 +96,6 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
         if success and project_id:
             self._invalidate_cache(project_id)
         if self.uow and success:
-            from app.core.audit import log_audit_event
             log_audit_event(
                 uow=self.uow,
                 user_id=user_id,

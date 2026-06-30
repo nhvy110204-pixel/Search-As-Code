@@ -5,6 +5,7 @@ from app.repositories.project import ProjectRepository
 from app.schemas.dto.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectListResponse
 from app.services.core.base import BaseService
 from app.core.logger import service_boundary
+from app.core.audit import log_audit_event    
 
 
 class ProjectService(BaseService[Project, ProjectCreate, ProjectUpdate]):
@@ -22,7 +23,6 @@ class ProjectService(BaseService[Project, ProjectCreate, ProjectUpdate]):
         """Create project and write audit log."""
         project = super().create(obj_in)
         if project and self.uow:
-            from app.core.audit import log_audit_event
             log_audit_event(
                 uow=self.uow,
                 user_id=obj_in.owner_user_id,
@@ -50,8 +50,7 @@ class ProjectService(BaseService[Project, ProjectCreate, ProjectUpdate]):
             return False
         owner_user_id = project.owner_user_id
         success = super().delete(id, hard=hard)
-        if success and self.uow:
-            from app.core.audit import log_audit_event
+        if success and self.uow:      
             log_audit_event(
                 uow=self.uow,
                 user_id=user_id or owner_user_id,

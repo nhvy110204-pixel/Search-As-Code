@@ -14,6 +14,7 @@ from app.schemas.dto.user import (
 )
 from app.services.core.redis_service import redis_cache_service
 from app.core.logger import service_boundary
+from app.core.audit import log_audit_event
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
         )
         user = self.repo.create_user(internal)
         if user and self.uow:
-            from app.core.audit import log_audit_event
             log_audit_event(
                 uow=self.uow,
                 user_id=user.id,
@@ -98,7 +98,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
             except Exception as e:
                 logger.warning("Failed to invalidate user session cache: %s", e)
             if self.uow and is_updating_keys:
-                from app.core.audit import log_audit_event
                 log_audit_event(
                     uow=self.uow,
                     user_id=id,
@@ -132,7 +131,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
             except Exception as e:
                 logger.warning("Failed to invalidate user session cache: %s", e)
             if self.uow:
-                from app.core.audit import log_audit_event
                 log_audit_event(
                     uow=self.uow,
                     user_id=actor_id or id,
@@ -160,7 +158,6 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
         user = self.get(id)
         if not user or not verify_password(old_password, user.hashed_password):
             if self.uow:
-                from app.core.audit import log_audit_event
                 log_audit_event(
                     uow=self.uow,
                     user_id=id,
@@ -175,8 +172,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate]):
         hashed = get_password_hash(new_password)
         self.repo.update(user, {"hashed_password": hashed})
 
-        if self.uow:
-            from app.core.audit import log_audit_event
+        if self.uow:      
             log_audit_event(
                 uow=self.uow,
                 user_id=id,

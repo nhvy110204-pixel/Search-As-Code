@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
 from app.schemas.dto.document_chunk import DocumentChunkCreate, DocumentChunkUpdate, DocumentChunkResponse, DocumentChunkListResponse
-from app.services.core.document_chunk import DocumentChunkService
+from app.services.document.document_chunk import DocumentChunkService
 
 router = APIRouter(prefix="/document-chunks", tags=["Document Chunks"])
 

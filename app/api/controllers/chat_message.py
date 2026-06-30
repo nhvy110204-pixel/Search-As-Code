@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
 from app.schemas.dto.chat_message import ChatMessageCreate, ChatMessageUpdate, ChatMessageResponse, ChatMessageListResponse
-from app.services.core.chat_message import ChatMessageService
+from app.services.chat.chat_message import ChatMessageService
 from app.shared.enums import MessageRole
 
 router = APIRouter(prefix="/chat-messages", tags=["Chat Messages"])

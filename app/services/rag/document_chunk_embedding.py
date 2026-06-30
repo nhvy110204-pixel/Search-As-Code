@@ -12,7 +12,7 @@ from app.schemas.dto.document_chunk import (
     DocumentChunkCreate,
     DocumentChunkUpdate,
 )
-from app.services.core.document_chunk import DocumentChunkService
+from app.services.document.document_chunk import DocumentChunkService
 from app.rag.embeddings.service import EmbeddingService
 from app.core.qdrant import qdrant_manager
 from app.config.settings import settings

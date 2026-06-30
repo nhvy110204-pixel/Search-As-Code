@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 from app.api.dependencies.auth import get_current_user
 from app.models.user import User
-from app.services.core.user import UserService
+from app.services.user.user_service import UserService
 from app.schemas.dto.user import UserUpdate
 
 @pytest.fixture
@@ -172,8 +172,8 @@ def test_invalid_checksum_falls_back_to_db(
     assert user == mock_user
     mock_repo_inst.get_user.assert_called_once_with(user_id)
 
-@patch("app.services.core.user.redis_cache_service")
-@patch("app.services.core.user.BaseService")
+@patch("app.services.user.user_service.redis_cache_service")
+@patch("app.services.user.user_service.BaseService")
 def test_user_update_invalidates_cache(mock_base_service, mock_redis_service):
     user_id = uuid.uuid4()
     mock_redis = MagicMock()
@@ -193,8 +193,8 @@ def test_user_update_invalidates_cache(mock_base_service, mock_redis_service):
     # Verify cache key was deleted
     mock_redis.delete.assert_called_once_with(f"user:session:{user_id}")
 
-@patch("app.services.core.user.redis_cache_service")
-@patch("app.services.core.user.BaseService")
+@patch("app.services.user.user_service.redis_cache_service")
+@patch("app.services.user.user_service.BaseService")
 def test_user_delete_invalidates_cache(mock_base_service, mock_redis_service):
     user_id = uuid.uuid4()
     mock_redis = MagicMock()

@@ -8,7 +8,7 @@ from app.models.user import User
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
 from app.schemas.dto.document import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentListResponse
-from app.services.core.document import DocumentService
+from app.services.document.document_service import DocumentService
 from app.shared.enums import DocumentStatus
 
 router = APIRouter(prefix="/documents", tags=["Documents"])

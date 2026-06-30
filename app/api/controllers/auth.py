@@ -19,7 +19,7 @@ from app.core.security import (
 from app.core.unit_of_work import UnitOfWork
 from app.models.auth_refresh_token import AuthRefreshToken
 from app.schemas.dto.user import TokenRefreshRequest, TokenResponse, UserLogin
-from app.services.core.user import UserService
+from app.services.user.user_service import UserService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 

@@ -15,7 +15,7 @@ from app.schemas.dto.project import (
     ProjectResponse,
     ProjectUpdate,
 )
-from app.services.core.project import ProjectService
+from app.services.project.project_service import ProjectService
 from app.shared.enums import ProjectStatus
 
 router = APIRouter(prefix="/projects", tags=["Projects"])

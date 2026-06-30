@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 from typing import Optional
 from app.schemas.dto.models import ModelsResponse, OpenAIModelsRequest, AnthropicModelsRequest, IBMModelsRequest
-from app.services.core.models import ModelService
+from app.services.llm.llm_model_service import ModelService
 
 router = APIRouter(prefix="/models", tags=["Models"])
 

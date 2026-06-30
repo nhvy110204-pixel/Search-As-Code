@@ -17,9 +17,9 @@ from app.observability.metrics import (
     track_rate_limit_exceeded,
     track_document_size
 )
-from app.tasks.celery_app import celery_app
 from app.tasks.ingestion_tasks import ingest_document
 from app.schemas.dto.ingestion import IngestionTaskResponse, DocumentUploadResponse
+from app.services.core.redis_service import redis_cache_service
 
 
 class IngestionService:
@@ -104,7 +104,6 @@ class IngestionService:
 
             # Invalidate project files cache
             try:
-                from app.services.core.redis_service import redis_cache_service
                 if redis_cache_service.redis:
                     cache_key = f"project:{project_id}:documents_metadata"
                     redis_cache_service.redis.delete(cache_key)

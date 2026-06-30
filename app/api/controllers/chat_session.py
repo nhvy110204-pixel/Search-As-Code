@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
 from app.models.user import User
 from app.schemas.dto.chat_session import ChatSessionCreate, ChatSessionUpdate, ChatSessionResponse, ChatSessionListResponse
-from app.services.core.chat_session import ChatSessionService
+from app.services.chat.chat_session import ChatSessionService
 
 router = APIRouter(prefix="/chat-sessions", tags=["Chat Sessions"])
 

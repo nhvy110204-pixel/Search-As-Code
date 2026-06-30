@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
-from app.services.core.ingestion import IngestionService
+from app.services.rag.ingestion.ingestion_service import IngestionService
 from app.api.dependencies.auth import get_current_user
 from app.models.user import User
 

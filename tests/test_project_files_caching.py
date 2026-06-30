@@ -9,7 +9,7 @@ from app.graph.nodes.finalizer import finalizer_node
 from app.graph.state.agent_state import AgentState
 from app.shared.enums import StopReason
 from app.models.document import Document
-from app.services.core.document import DocumentService
+from app.services.document.document_service import DocumentService
 from app.schemas.dto.document import DocumentCreate, DocumentUpdate
 from app.guardrails.router import check_query_relevance
 from app.graph.nodes.executor import executor_node
@@ -157,7 +157,7 @@ async def test_check_query_relevance_rich_metadata(mock_chat):
     assert "hr_policy.pdf: This document contains vacation rules and guidelines" in system_prompt
 
 
-@patch("app.services.core.document.redis_cache_service")
+@patch("app.services.document.document_service.redis_cache_service")
 def test_document_service_invalidates_cache(mock_redis_service):
     mock_redis = MagicMock()
     mock_redis_service.redis = mock_redis
