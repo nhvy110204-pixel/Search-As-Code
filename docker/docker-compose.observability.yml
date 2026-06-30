@@ -41,7 +41,7 @@ services:
     container_name: ragflash-langfuse
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3030:3000"
     environment:
       - DATABASE_URL=postgresql://postgres:langfuse@langfuse-db:5432/langfuse
       - CLICKHOUSE_URL=http://clickhouse:8123
@@ -49,7 +49,7 @@ services:
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=1
       - NEXTAUTH_SECRET=my-secret-key-12345
-      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_URL=http://localhost:3030
       - SALT=my-salt-key-12345
       - TELEMETRY_ENABLED=false
       - CLICKHOUSE_CLUSTER_ENABLED=false

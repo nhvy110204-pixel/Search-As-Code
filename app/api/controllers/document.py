@@ -37,6 +37,23 @@ def create_document(
         )
 
 
+@router.get("/check-filename")
+def check_filename(
+    filename: str = Query(...),
+    project_id: Optional[uuid.UUID] = Query(None),
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service)
+):
+    """Check if a file with the given name exists in the active project"""
+    filters = {"file_name": filename}
+    if project_id:
+        filters["project_id"] = project_id
+    
+    res = service.get_documents_paginated(page=1, page_size=1, filters=filters)
+    exists = res.total > 0
+    return {"exists": exists}
+
+
 @router.get("/{document_id}", response_model=DocumentResponse)
 def get_document(document_id: uuid.UUID, service: DocumentService = Depends(get_document_service)):
     document = service.get(id=document_id)
@@ -109,3 +126,6 @@ def delete_document(
             detail="Document not found"
         )
     return None
+
+
+

@@ -1,7 +1,10 @@
 from uuid import UUID
 from typing import Optional
 import blake3
+import logging
 from app.core.unit_of_work import UnitOfWork
+
+logger = logging.getLogger(__name__)
 from app.core.logger import service_boundary
 from app.core.validators import validate_file_size, validate_file_type
 from app.core.rate_limiter import rate_limiter
@@ -88,7 +91,7 @@ class IngestionService:
                         task_id=None,
                         celery_task_id=None,
                         is_new=False,
-                        status=document.status.value,
+                        status=document.status.value if hasattr(document.status, "value") else document.status,
                     )
 
                 task = uow.ingestion_tasks.create_task(
@@ -122,7 +125,7 @@ class IngestionService:
                 task_id=str(task.id),
                 celery_task_id=celery_task.id,
                 is_new=True,
-                status=document.status.value,
+                status=document.status.value if hasattr(document.status, "value") else document.status,
             )
             
         except Exception as e:
@@ -143,7 +146,7 @@ class IngestionService:
 
             return IngestionTaskResponse.model_validate({
                 "task_id": str(task.id),
-                "status": task.status.value,
+                "status": task.status.value if hasattr(task.status, "value") else task.status,
                 "progress": task.progress,
                 "error_message": task.error_message,
                 "started_at": task.started_at,

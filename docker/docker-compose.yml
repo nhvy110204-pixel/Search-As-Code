@@ -20,15 +20,15 @@ services:
       - ragflash-network
 
   redis:
-    image: redis:7-alpine
-    container_name: ragflash-redis
+    image: valkey/valkey:8.0-alpine
+    container_name: ragflash-valkey
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
+      - valkey_data:/data
+    command: valkey-server --appendonly yes
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -85,7 +85,7 @@ services:
 volumes:
   rabbitmq_data:
     driver: local
-  redis_data:
+  valkey_data:
     driver: local
   qdrant_data:
     driver: local

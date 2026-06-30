@@ -28,8 +28,8 @@ class DocumentResponse(DocumentBase):
     id: uuid.UUID
     user_id: uuid.UUID
     project_id: uuid.UUID
-    storage_path: str
-    markdown_path: Optional[str]
+    storage_path: Optional[str] = None
+    markdown_path: Optional[str] = None
     file_size_bytes: int
     status: DocumentStatus
     chunk_count: int

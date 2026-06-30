@@ -14,6 +14,12 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
     def get_project(self, id: uuid.UUID) -> Optional[Project]:
         return self.get(id=id)
 
+    def check_write_permission(self, user_id: uuid.UUID, project_id: uuid.UUID) -> bool:
+        project = self.get(id=project_id)
+        if not project:
+            return False
+        return project.owner_user_id == user_id
+
     def list_projects(
         self,
         page: int = 1,

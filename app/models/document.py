@@ -28,6 +28,8 @@ class Document(AIEntityMixin, Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Mô tả tóm tắt nội dung tài liệu")
     file_content: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True, comment="Nội dung file gốc lưu trong PostgreSQL BYTEA (max 100MB)")
     is_compressed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), nullable=False, comment="Đánh dấu nếu file_content đã được nén gzip")
+    storage_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="Đường dẫn file trên S3/MinIO")
+    markdown_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="Đường dẫn file markdown")
     markdown_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Nội dung markdown sau khi parse từ file gốc")
     file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, comment="Kích thước storage thực tế để tracking quota")

@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.app.amqp import Queue
 from app.config.settings import settings
 
 celery_app = Celery(
@@ -56,14 +57,8 @@ celery_app.conf.update(
     task_default_queue=settings.CELERY_INGESTION_QUEUE,
     
     task_queues=[
-        {
-            "name": settings.CELERY_INGESTION_QUEUE,
-            "routing_key": settings.CELERY_INGESTION_QUEUE,
-        },
-        {
-            "name": f"{settings.CELERY_INGESTION_QUEUE}_dlq",
-            "routing_key": f"{settings.CELERY_INGESTION_QUEUE}_dlq",
-        },
+        Queue(settings.CELERY_INGESTION_QUEUE, routing_key=settings.CELERY_INGESTION_QUEUE),
+        Queue(f"{settings.CELERY_INGESTION_QUEUE}_dlq", routing_key=f"{settings.CELERY_INGESTION_QUEUE}_dlq"),
     ],
     
     task_acks_late=True,

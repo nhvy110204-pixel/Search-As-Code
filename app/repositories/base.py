@@ -126,7 +126,9 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return self.db.execute(query).scalars().first()
 
     #  WRITE OPERATIONS (Chuẩn ACID) 
-    def _obj_to_dict(self, obj_in: CreateSchemaType | UpdateSchemaType) -> Dict[str, Any]:
+    def _obj_to_dict(self, obj_in: CreateSchemaType | UpdateSchemaType | Dict[str, Any]) -> Dict[str, Any]:
+        if isinstance(obj_in, dict):
+            return obj_in
         if hasattr(obj_in, "model_dump"):
             return obj_in.model_dump(exclude_unset=True)
         return obj_in.dict(exclude_unset=True)
