@@ -1,12 +1,13 @@
 import logging
-from typing import Optional
+from typing import Optional, Union
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 def get_llm_client(
-    config: Optional[dict] = None,
+    config: Optional[Union[dict, RunnableConfig]] = None,
     model_name: Optional[str] = None,
     streaming: bool = True
 ) -> ChatOpenAI:

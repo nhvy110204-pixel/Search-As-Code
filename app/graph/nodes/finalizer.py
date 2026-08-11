@@ -1,8 +1,10 @@
 import json
 import logging
 import uuid
+from typing import Optional
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 from app.config.settings import settings
@@ -15,7 +17,7 @@ from app.core.llm_factory import get_llm_client
 
 logger = logging.getLogger(__name__)
 
-async def finalizer_node(state: AgentState, config: dict = None) -> dict:
+async def finalizer_node(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
     """
     Finalizer Node: Generates the final grounded answer with citations,
     handles self-correction loops for invalid citations, or falls back to

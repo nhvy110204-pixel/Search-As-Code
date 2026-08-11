@@ -1,8 +1,9 @@
 import json
 import logging
 import uuid
-from typing import List
+from typing import List, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from app.core.llm_factory import get_llm_client
 from app.config.settings import settings
@@ -13,7 +14,7 @@ from app.shared.enums import MemoryType
 
 logger = logging.getLogger(__name__)
 
-async def memory_extractor_node(state: AgentState, config: dict = None) -> dict:
+async def memory_extractor_node(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
     """
     Memory Extractor Node: Analyzes the execution turns history to extract
     permanent facts and user preferences, then stores them in LTM.

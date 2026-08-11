@@ -2,6 +2,7 @@ import re
 import logging
 from typing import Optional
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from app.config.settings import settings
 from app.graph.state.agent_state import AgentState
@@ -75,7 +76,7 @@ def _extract_code_block(text: str) -> Optional[str]:
     return None
 
 
-async def reasoner_node(state: AgentState, config: dict = None) -> dict:
+async def reasoner_node(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
     """
     Node Reasoner: Node tư duy nhận thức của agent SaC.
     Tạo bộ nhớ làm việc ngắn gọn, gọi LLM, trích xuất code Python
