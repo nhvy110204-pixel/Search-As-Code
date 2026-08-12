@@ -9,6 +9,8 @@ from app.api.dependencies.auth import get_current_user
 from app.models.user import User
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
+tasks_router = APIRouter(prefix="/tasks", tags=["tasks"])
+
 security = HTTPBearer()
 
 
@@ -76,3 +78,26 @@ def get_ingestion_status(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+
+
+
+@router.post("/cancel/{task_id}")
+@router.post("/tasks/{task_id}/cancel")
+@tasks_router.post("/{task_id}/cancel")
+def cancel_ingestion_task(
+    task_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        uow_factory = UnitOfWork(db)
+        ingestion_service = IngestionService(uow_factory)
+        ingestion_service.cancel_ingestion_task(task_id, current_user.id)
+        return {
+            "status": "cancelled",
+            "task_id": str(task_id)
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cancel task: {str(e)}")

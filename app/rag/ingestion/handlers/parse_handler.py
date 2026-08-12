@@ -2,11 +2,13 @@ import os
 import logging
 import tempfile
 import asyncio
+import pypdf
 from uuid import UUID
 from typing import Dict, Any
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
+
 from app.core.compression import decompress_data
 from app.observability.metrics import track_step_duration
 
@@ -21,6 +23,21 @@ _docling_converter = DocumentConverter(
         InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_pipeline_options)
     }
 )
+
+
+def _fallback_pdf_extraction(temp_file_path: str) -> str:
+    try:
+        reader = pypdf.PdfReader(temp_file_path)
+        text_parts = []
+        for i, page in enumerate(reader.pages):
+            txt = page.extract_text()
+            if txt and txt.strip():
+                text_parts.append(f"## Page {i+1}\n\n{txt.strip()}")
+        if text_parts:
+            return "\n\n".join(text_parts)
+    except Exception as err:
+        logger.warning(f"pypdf fallback extraction failed: {err}")
+    return ""
 
 
 def _run_docling_conversion(temp_file_path: str) -> str:
@@ -78,12 +95,22 @@ async def parse_handler(
                     _run_docling_conversion, 
                     temp_file_path
                 )
+                if not markdown_content or "[Error parsing file:" in markdown_content or len(markdown_content) < 300:
+                    fallback_text = await asyncio.to_thread(_fallback_pdf_extraction, temp_file_path)
+                    if fallback_text:
+                        markdown_content = fallback_text
+                        logger.info(f"Used pypdf fallback extraction for {document.file_name} ({len(markdown_content)} chars)")
                 
                 logger.info(f"Successfully parsed {document.file_name} with Docling via background thread")
                 
             except Exception as e:
                 logger.error(f"Docling parsing failed for {document.file_name}: {str(e)}")
-                markdown_content = f"# {document.file_name}\n\n[Error parsing file: {str(e)}]"
+                fallback_text = await asyncio.to_thread(_fallback_pdf_extraction, temp_file_path)
+                if fallback_text:
+                    markdown_content = fallback_text
+                    logger.info(f"Used pypdf fallback extraction after exception for {document.file_name} ({len(markdown_content)} chars)")
+                else:
+                    markdown_content = f"# {document.file_name}\n\n[Error parsing file: {str(e)}]"
                 
             finally:
                 if temp_file_path and os.path.exists(temp_file_path):

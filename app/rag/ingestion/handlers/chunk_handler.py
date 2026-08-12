@@ -222,11 +222,11 @@ async def chunk_handler(
         embedding_id = UUID(int=0)  
         
         chunk_data = {
-            "document_id": document_id,
+            "document_id": str(document_id),
             "chunk_index": idx,
             "content": raw_chunk["content"],
             "chunk_hash": chunk_hash,
-            "embedding_id": embedding_id,
+            "embedding_id": str(embedding_id),
             "embed_status": "pending",
             "chunk_source": "auto",
         }

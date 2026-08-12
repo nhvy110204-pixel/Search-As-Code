@@ -46,6 +46,24 @@ class DocumentRepository(BaseRepository[Document, DocumentCreate, DocumentUpdate
     def get_by_project(self, project_id: uuid.UUID, skip: int = 0, limit: int = 100) -> list[Document]:
         return self.get_multi(filters={"project_id": project_id}, skip=skip, limit=limit)
 
+    def get_active_documents(self, limit: int = 100) -> list[Document]:
+        """Lấy danh sách các tài liệu active chưa bị xóa."""
+        query = (
+            select(Document)
+            .where(Document.is_deleted.is_(False))
+            .order_by(Document.created_at.desc())
+            .limit(limit)
+        )
+        return list(self.db.execute(query).scalars().all())
+
+    def get_by_filename(self, filename: str) -> list[Document]:
+        """Lấy danh sách các tài liệu theo file_name chính xác và chưa bị xóa."""
+        query = select(Document).where(
+            Document.file_name == filename,
+            Document.is_deleted.is_(False)
+        )
+        return list(self.db.execute(query).scalars().all())
+
     def find_by_hash(self, file_hash: str, project_id: uuid.UUID) -> Optional[Document]:
         query = select(Document).where(
             Document.blake3_hash == file_hash,

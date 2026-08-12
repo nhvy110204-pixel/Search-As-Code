@@ -77,7 +77,11 @@ class IngestionPipeline:
                     worker_id
                 )
                 
-                if result["failed_chunk_ids"]:
+                # Check if task was cancelled during pipeline execution
+                current_task = uow.ingestion_tasks.get(task_id)
+                if current_task and current_task.status == IngestionTaskStatus.CANCELLED:
+                    logger.info(f"Task {task_id} was cancelled. Skipping completion update.")
+                    return {"status": "cancelled", "chunk_count": 0, "failed_chunk_ids": []}
                     document.status = DocumentStatus.COMPLETED_WITH_WARNINGS
                     document.has_partial_failures = True
                 else:
@@ -89,7 +93,9 @@ class IngestionPipeline:
                     task_id,
                     IngestionTaskStatus.COMPLETED,
                     100.0,
-                    completed_at=datetime.utcnow()
+                    completed_at=datetime.utcnow(),
+                    error_message="",
+                    last_error_step=""
                 )
                 
                 uow.commit()
@@ -118,7 +124,7 @@ class IngestionPipeline:
     
     def _load_pipeline_state(self, document) -> PipelineState:
         if document.pipeline_state:
-            return PipelineState.model_validate(document.pipeline_state)
+            return PipelineState.from_dict(document.pipeline_state)
         return PipelineState()
     
     def _save_pipeline_state(
@@ -127,7 +133,7 @@ class IngestionPipeline:
         document_id: UUID,
         pipeline_state: PipelineState
     ) -> None:
-        uow.documents.update_pipeline_state(document_id, pipeline_state.model_dump())
+        uow.documents.update_pipeline_state(document_id, pipeline_state.to_dict())
     
     async def _execute_pipeline(
         self,
@@ -138,6 +144,9 @@ class IngestionPipeline:
         pipeline_state: PipelineState,
         worker_id: Optional[str]
     ) -> dict[str, Any]:
+        document = uow.documents.get(document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
 
         steps_progress = {
             "virus_scan": (10.0, DocumentStatus.PARSING),  # TODO: Add DocumentStatus.QUARANTINED for infected files
@@ -156,6 +165,12 @@ class IngestionPipeline:
         }
         
         for step_name, (progress, doc_status) in steps_progress.items():
+            # Check if task was cancelled by user
+            current_task = uow.ingestion_tasks.get(task_id)
+            if current_task and current_task.status == IngestionTaskStatus.CANCELLED:
+                logger.info(f"Task {task_id} was cancelled. Aborting pipeline at step '{step_name}'.")
+                return result
+
             if step_name == "summary_chunk":
                 step_state_summary = pipeline_state.summary
                 step_state_chunk = pipeline_state.chunk
@@ -240,9 +255,14 @@ class IngestionPipeline:
 
                     document.status = doc_status
 
+                    try:
+                        task_status = IngestionTaskStatus(step_name.lower())
+                    except ValueError:
+                        task_status = step_name
+
                     uow.ingestion_tasks.update_task_progress(
                         task_id,
-                        IngestionTaskStatus(step_name.upper()),
+                        task_status,
                         progress
                     )
                     uow.commit()

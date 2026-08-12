@@ -20,6 +20,7 @@ from app.observability.metrics import (
 from app.tasks.ingestion_tasks import ingest_document
 from app.schemas.dto.ingestion import IngestionTaskResponse, DocumentUploadResponse
 from app.services.core.redis_service import redis_cache_service
+from app.shared.enums import IngestionTaskStatus, DocumentStatus
 
 
 class IngestionService:
@@ -153,3 +154,24 @@ class IngestionService:
                 "attempts": task.attempts,
                 "last_error_step": task.last_error_step,
             })
+
+    @service_boundary("Cancel Ingestion Task")
+    def cancel_ingestion_task(self, task_id: UUID, user_id: UUID) -> None:
+        with self.uow_factory() as uow:
+            task = uow.ingestion_tasks.get(task_id)
+            if not task:
+                raise ValueError(f"Task {task_id} not found")
+
+            uow.ingestion_tasks.update_task_progress(
+                task_id,
+                IngestionTaskStatus.CANCELLED,
+                progress=task.progress,
+                error_message="Task cancelled by user",
+                last_error_step="cancelled"
+            )
+
+            document = uow.documents.get(task.document_id)
+            if document:
+                document.status = DocumentStatus.FAILED
+
+            uow.commit()

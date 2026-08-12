@@ -49,7 +49,6 @@ class OpenAIChatCompletionProvider:
             model=self._model_name,
             messages=messages,
             stream=True,
-            stream_options={"include_usage": True},
         )
 
         async for chunk in stream:

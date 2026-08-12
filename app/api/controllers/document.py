@@ -2,12 +2,20 @@ import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_user
 from app.models.user import User
 from app.core.database import get_db
 from app.core.unit_of_work import UnitOfWork
-from app.schemas.dto.document import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentListResponse
+from app.schemas.dto.document import (
+    DocumentCreate,
+    DocumentUpdate,
+    DocumentResponse,
+    DocumentListResponse,
+    DeleteDocumentByFilenameRequest,
+    DeleteDocumentByFilenameResponse,
+)
 from app.services.document.document_service import DocumentService
 from app.shared.enums import DocumentStatus
 
@@ -126,6 +134,27 @@ def delete_document(
             detail="Document not found"
         )
     return None
+
+
+@router.post("/delete-by-filename", response_model=DeleteDocumentByFilenameResponse)
+def delete_document_by_filename(
+    payload: DeleteDocumentByFilenameRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service)
+):
+    """
+    Xóa tài liệu và các vector chunks theo tên file.
+    """
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    result = service.delete_by_filename(
+        filename=payload.filename,
+        user_id=current_user.id,
+        ip_address=client_ip,
+        user_agent=user_agent
+    )
+    return DeleteDocumentByFilenameResponse(**result)
 
 
 

@@ -37,6 +37,7 @@ class DatabaseTask(Task):
                         uow.ingestion_tasks.update_task_progress(
                             task_id_uuid,
                             "failed",
+                            0.0,
                             error_message=f"Task failed after {self.max_retries} retries: {str(exc)}",
                             last_error_step="unknown"
                         )

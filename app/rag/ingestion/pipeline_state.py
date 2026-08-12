@@ -19,6 +19,7 @@ class PipelineState:
     """Complete pipeline state for checkpoint/resume functionality."""
     
     # Step states
+    virus_scan: StepState = field(default_factory=StepState)
     parse: StepState = field(default_factory=StepState)
     summary: StepState = field(default_factory=StepState)
     chunk: StepState = field(default_factory=StepState)
@@ -45,6 +46,20 @@ class PipelineState:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSONB storage."""
+        def _sanitize(obj: Any) -> Any:
+            from uuid import UUID
+            if isinstance(obj, UUID):
+                return str(obj)
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            if hasattr(obj, "value"):
+                return obj.value
+            if isinstance(obj, dict):
+                return {str(k): _sanitize(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple, set)):
+                return [_sanitize(item) for item in obj]
+            return obj
+
         def step_to_dict(step: StepState) -> Dict[str, Any]:
             return {
                 "status": step.status.value,
@@ -52,10 +67,11 @@ class PipelineState:
                 "completed_at": step.completed_at.isoformat() if step.completed_at else None,
                 "tries": step.tries,
                 "error": step.error,
-                "metadata": step.metadata,
+                "metadata": _sanitize(step.metadata),
             }
         
-        return {
+        return _sanitize({
+            "virus_scan": step_to_dict(self.virus_scan),
             "parse": step_to_dict(self.parse),
             "summary": step_to_dict(self.summary),
             "chunk": step_to_dict(self.chunk),
@@ -73,7 +89,7 @@ class PipelineState:
             "step_history": self.step_history,
             "version": self.version,
             "last_updated": self.last_updated.isoformat() if self.last_updated else None,
-        }
+        })
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PipelineState":
@@ -89,6 +105,7 @@ class PipelineState:
             )
         
         return cls(
+            virus_scan=dict_to_step(data.get("virus_scan", {})),
             parse=dict_to_step(data.get("parse", {})),
             summary=dict_to_step(data.get("summary", {})),
             chunk=dict_to_step(data.get("chunk", {})),
@@ -152,7 +169,7 @@ class PipelineState:
     
     def get_next_step(self) -> Optional[str]:
         """Get the next step to execute based on current state."""
-        steps_order = ["parse", "summary", "chunk", "dedup", "enrich", "embed", "link", "finalize"]
+        steps_order = ["virus_scan", "parse", "summary", "chunk", "dedup", "enrich", "embed", "link", "finalize"]
         for step_name in steps_order:
             step = getattr(self, step_name)
             if step.status in [StepStatus.PENDING, StepStatus.FAILED]:
@@ -161,7 +178,7 @@ class PipelineState:
     
     def can_resume_from(self, step_name: str) -> bool:
         """Check if pipeline can resume from a specific step."""
-        steps_order = ["parse", "summary", "chunk", "dedup", "enrich", "embed", "link", "finalize"]
+        steps_order = ["virus_scan", "parse", "summary", "chunk", "dedup", "enrich", "embed", "link", "finalize"]
         step_index = steps_order.index(step_name)
         
         # All previous steps must be DONE

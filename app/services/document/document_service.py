@@ -139,3 +139,45 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
             return None
         db_obj.chunk_count = (db_obj.chunk_count or 0) + delta
         return self.doc_repo.update(db_obj, {})
+
+    @service_boundary("Delete Document By Filename")
+    def delete_by_filename(
+        self,
+        filename: str,
+        user_id: Optional[uuid.UUID] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> Dict[str, Any]:
+        from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+        from app.core.qdrant import qdrant_manager
+        from app.config.settings import settings
+
+        documents = self.doc_repo.get_by_filename(filename)
+        deleted_chunks = 0
+
+        for doc in documents:
+            deleted_chunks += (doc.chunk_count or 1)
+            self.delete(id=doc.id, user_id=user_id, ip_address=ip_address, user_agent=user_agent)
+
+        try:
+            filter_cond = Filter(
+                must=[
+                    FieldCondition(
+                        key="filename",
+                        match=MatchValue(value=filename)
+                    )
+                ]
+            )
+            qdrant_manager.delete_vectors_by_filter(
+                collection_name=settings.QDRANT_COLLECTION_CHUNKS,
+                filter_condition=filter_cond
+            )
+        except Exception as qerr:
+            logger.warning(f"Failed to delete Qdrant vectors for {filename}: {qerr}")
+
+        return {
+            "success": True,
+            "deleted_chunks": deleted_chunks,
+            "filename": filename,
+            "message": f"Document '{filename}' and associated vectors deleted successfully"
+        }

@@ -48,8 +48,9 @@ class IngestionTaskRepository(BaseRepository[IngestionTask, dict, dict]):
         attempts: Optional[int] = None
     ) -> None:
 
+        status_val = status.value if hasattr(status, "value") else str(status)
         update_dict = {
-            "status": status.value,
+            "status": status_val,
             "progress": progress,
         }
         

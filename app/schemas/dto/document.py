@@ -45,3 +45,15 @@ class DocumentListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class DeleteDocumentByFilenameRequest(BaseModel):
+    filename: str = Field(..., min_length=1, description="Tên file cần xóa")
+
+
+class DeleteDocumentByFilenameResponse(BaseModel):
+    success: bool
+    deleted_chunks: int
+    filename: str
+    message: str
+

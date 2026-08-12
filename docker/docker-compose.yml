@@ -53,8 +53,9 @@ services:
       - "4000:4000"
     volumes:
       - .:/app/config_dir
+    env_file:
+      - ../.env
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LITELLM_MASTER_KEY=${LITELLM_PROXY_KEY:-proxy-key}
     entrypoint: ["litellm", "--config", "/app/config_dir/litellm-config.yaml", "--port", "4000"]
     networks:

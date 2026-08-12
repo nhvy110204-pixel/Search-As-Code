@@ -58,6 +58,7 @@ class IngestionTaskStatus(str, enum.Enum):
     SAVING = "saving"              # Flushing records to DB & Qdrant
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 class ProjectStatus(str, enum.Enum):
     ACTIVE = "active"
