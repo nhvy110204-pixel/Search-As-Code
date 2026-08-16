@@ -57,7 +57,7 @@ def get_project(
     current_user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
 ):
-    project = service.get(id=project_id)
+    project = service.get_with_stats(id=project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     if project.owner_user_id != current_user.id:

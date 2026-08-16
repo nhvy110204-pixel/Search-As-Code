@@ -35,6 +35,13 @@ class ProjectService(BaseService[Project, ProjectCreate, ProjectUpdate]):
             )
         return project
 
+    @service_boundary("Get Project With Stats")
+    def get_with_stats(self, id: uuid.UUID) -> Optional[ProjectResponse]:
+        data = self.project_repo.get_project_with_stats(id=id)
+        if not data:
+            return None
+        return ProjectResponse.model_validate(data)
+
     @service_boundary("Delete Project")
     def delete(
         self,

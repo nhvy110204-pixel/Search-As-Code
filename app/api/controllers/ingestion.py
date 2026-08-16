@@ -57,6 +57,56 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
+@router.post("/upload-batch")
+async def upload_documents_batch(
+    project_id: UUID = Form(...),
+    files: list[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Tải lên nhiều file tài liệu cùng lúc cho một Project.
+    """
+    try:
+        uow_factory = UnitOfWork(db)
+        ingestion_service = IngestionService(uow_factory)
+        
+        results = []
+        for file in files:
+            try:
+                file_content = await file.read()
+                file_size = len(file_content)
+                mime_type = file.content_type or "application/octet-stream"
+                
+                res = ingestion_service.upload_document(
+                    user_id=current_user.id,
+                    project_id=project_id,
+                    file_name=file.filename or "unknown",
+                    file_content=file_content,
+                    file_size=file_size,
+                    mime_type=mime_type,
+                )
+                results.append({
+                    "file_name": file.filename,
+                    "success": True,
+                    "data": res.model_dump()
+                })
+            except Exception as item_err:
+                results.append({
+                    "file_name": file.filename,
+                    "success": False,
+                    "error": str(item_err)
+                })
+                
+        return {
+            "success": True,
+            "total": len(files),
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch upload failed: {str(e)}")
+
+
 @router.get("/status/{task_id}")
 def get_ingestion_status(
     task_id: UUID,

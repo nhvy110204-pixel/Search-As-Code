@@ -181,3 +181,26 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
             "filename": filename,
             "message": f"Document '{filename}' and associated vectors deleted successfully"
         }
+
+    @service_boundary("Get Document Preview")
+    def get_document_preview(self, id: uuid.UUID) -> Optional[Dict[str, Any]]:
+        doc = self.get(id)
+        if not doc:
+            return None
+        content = doc.markdown_content
+        if not content and doc.chunks:
+            content = "\n\n".join(chunk.content for chunk in doc.chunks if chunk.content)
+        
+        summary = None
+        if doc.processing_metadata and isinstance(doc.processing_metadata, dict):
+            summary = doc.processing_metadata.get("global_summary")
+
+        return {
+            "id": doc.id,
+            "file_name": doc.file_name,
+            "mime_type": doc.mime_type,
+            "status": doc.status.value if hasattr(doc.status, "value") else str(doc.status),
+            "chunk_count": doc.chunk_count or 0,
+            "content": content or "",
+            "summary": summary,
+        }

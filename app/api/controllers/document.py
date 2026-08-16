@@ -12,6 +12,7 @@ from app.schemas.dto.document import (
     DocumentCreate,
     DocumentUpdate,
     DocumentResponse,
+    DocumentPreviewResponse,
     DocumentListResponse,
     DeleteDocumentByFilenameRequest,
     DeleteDocumentByFilenameResponse,
@@ -60,6 +61,22 @@ def check_filename(
     res = service.get_documents_paginated(page=1, page_size=1, filters=filters)
     exists = res.total > 0
     return {"exists": exists}
+
+
+@router.get("/{document_id}/preview", response_model=DocumentPreviewResponse)
+def get_document_preview(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    """Get parsed Markdown content and summary preview for a document."""
+    preview = service.get_document_preview(id=document_id)
+    if not preview:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    return preview
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)

@@ -40,6 +40,16 @@ class DocumentResponse(DocumentBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DocumentPreviewResponse(BaseModel):
+    id: uuid.UUID
+    file_name: str
+    mime_type: str
+    status: str
+    chunk_count: int
+    content: str
+    summary: Optional[str] = None
+
+
 class DocumentListResponse(BaseModel):
     items: List[DocumentResponse]
     total: int
@@ -56,4 +66,3 @@ class DeleteDocumentByFilenameResponse(BaseModel):
     deleted_chunks: int
     filename: str
     message: str
-

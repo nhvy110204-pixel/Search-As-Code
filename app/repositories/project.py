@@ -4,6 +4,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.project import Project
+from app.models.document import Document
+from app.models.chat_session import ChatSession
 from app.repositories.base import BaseRepository
 from app.schemas.dto.project import ProjectCreate, ProjectUpdate
 
@@ -20,14 +22,65 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
             return False
         return project.owner_user_id == user_id
 
+    def get_project_with_stats(self, id: uuid.UUID) -> Optional[dict[str, Any]]:
+        doc_count_subq = (
+            select(func.count(Document.id))
+            .where(Document.project_id == Project.id, Document.is_deleted == False)
+            .scalar_subquery()
+            .label("document_count")
+        )
+        session_count_subq = (
+            select(func.count(ChatSession.id))
+            .where(ChatSession.project_id == Project.id, ChatSession.is_deleted == False)
+            .scalar_subquery()
+            .label("session_count")
+        )
+
+        query = (
+            select(Project, doc_count_subq, session_count_subq)
+            .where(Project.id == id, Project.is_deleted == False)
+        )
+        row = self.db.execute(query).first()
+        if not row:
+            return None
+        project, doc_cnt, sess_cnt = row
+        return {
+            "id": project.id,
+            "owner_user_id": project.owner_user_id,
+            "name": project.name,
+            "description": project.description,
+            "status": project.status,
+            "settings": project.settings or {},
+            "document_count": doc_cnt or 0,
+            "session_count": sess_cnt or 0,
+            "created_at": project.created_at,
+            "updated_at": project.updated_at,
+        }
+
     def list_projects(
         self,
         page: int = 1,
         page_size: int = 100,
         filters: Optional[Dict[str, Any]] = None,
-    ) -> tuple[list[Project], int]:
-        """Paginate projects. Returns (projects, total)."""
-        query = select(Project)
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Paginate projects with document_count and session_count. Returns (projects_data, total)."""
+        doc_count_subq = (
+            select(func.count(Document.id))
+            .where(Document.project_id == Project.id, Document.is_deleted == False)
+            .scalar_subquery()
+            .label("document_count")
+        )
+        session_count_subq = (
+            select(func.count(ChatSession.id))
+            .where(ChatSession.project_id == Project.id, ChatSession.is_deleted == False)
+            .scalar_subquery()
+            .label("session_count")
+        )
+
+        query = (
+            select(Project, doc_count_subq, session_count_subq)
+            .where(Project.is_deleted == False)
+        )
 
         if filters:
             if "owner_user_id" in filters and filters["owner_user_id"] is not None:
@@ -42,6 +95,21 @@ class ProjectRepository(BaseRepository[Project, ProjectCreate, ProjectUpdate]):
 
         query = query.order_by(Project.created_at.desc())
         query = query.offset((page - 1) * page_size).limit(page_size)
-        results = self.db.execute(query).scalars().all()
+        rows = self.db.execute(query).all()
 
-        return list(results), total
+        results = []
+        for project, doc_cnt, sess_cnt in rows:
+            results.append({
+                "id": project.id,
+                "owner_user_id": project.owner_user_id,
+                "name": project.name,
+                "description": project.description,
+                "status": project.status,
+                "settings": project.settings or {},
+                "document_count": doc_cnt or 0,
+                "session_count": sess_cnt or 0,
+                "created_at": project.created_at,
+                "updated_at": project.updated_at,
+            })
+
+        return results, total

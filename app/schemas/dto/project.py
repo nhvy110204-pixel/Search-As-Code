@@ -26,6 +26,8 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(ProjectBase):
     id: uuid.UUID
     owner_user_id: uuid.UUID
+    document_count: int = 0
+    session_count: int = 0
     created_at: datetime
     updated_at: datetime
 
