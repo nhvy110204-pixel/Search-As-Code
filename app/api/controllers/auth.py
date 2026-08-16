@@ -17,8 +17,10 @@ from app.core.security import (
     hash_token,
 )
 from app.core.unit_of_work import UnitOfWork
+from app.api.dependencies.auth import get_current_user
 from app.models.auth_refresh_token import AuthRefreshToken
-from app.schemas.dto.user import TokenRefreshRequest, TokenResponse, UserLogin
+from app.models.user import User
+from app.schemas.dto.user import TokenRefreshRequest, TokenResponse, UserLogin, UserResponse
 from app.services.user.user_service import UserService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -125,3 +127,9 @@ def refresh_token(payload: TokenRefreshRequest, request: Request, db: Session = 
         existing_token.replaced_by_token_id = replacement.id if replacement else None
         db.add(existing_token)
         return response
+
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
