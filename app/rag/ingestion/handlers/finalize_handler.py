@@ -3,6 +3,7 @@ from typing import Dict, Any
 import logging
 from app.config.settings import settings
 from app.observability.metrics import track_step_duration
+from app.services.core.redis_service import redis_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,6 @@ async def finalize_handler(
     
     # Invalidate project documents metadata cache
     try:
-        from app.services.core.redis_service import redis_cache_service
         if redis_cache_service.redis:
             cache_key = f"project:{project_id}:documents_metadata"
             redis_cache_service.redis.delete(cache_key)

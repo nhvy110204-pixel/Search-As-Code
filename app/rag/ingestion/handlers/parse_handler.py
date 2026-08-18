@@ -1,8 +1,8 @@
 import os
+import gc
 import logging
 import tempfile
 import asyncio
-import gc
 from typing import Dict, Any, Optional, Set
 from uuid import UUID
 
@@ -12,15 +12,9 @@ except ImportError:
     pypdf = None
 
 try:
-    from docling.document_converter import DocumentConverter, PdfFormatOption
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
+    import torch
 except ImportError:
-    DocumentConverter = Any
-    PdfFormatOption = Any
-    InputFormat = Any
-    PdfPipelineOptions = Any
-    EasyOcrOptions = Any
+    torch = None
 
 from app.shared.enums import IngestionTaskStatus
 from app.core.compression import decompress_data
@@ -32,12 +26,35 @@ from app.rag.ingestion.quality_gate import (
 )
 
 try:
-    import torch
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, EasyOcrOptions
 except ImportError:
-    torch = None
+    class DocumentConverter:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+        def convert(self, *args, **kwargs):
+            raise NotImplementedError("Docling is not installed in the current environment.")
+
+    class PdfFormatOption:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class InputFormat:  # type: ignore
+        PDF = "pdf"
+
+    class PdfPipelineOptions:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            self.do_ocr: bool = False
+            self.ocr_options: Any = None
+
+    class EasyOcrOptions:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+
 
 logger = logging.getLogger(__name__)
-
 
 class PdfProfile:
     """Classified profiles for PDF documents to optimize parsing strategy and resource consumption."""

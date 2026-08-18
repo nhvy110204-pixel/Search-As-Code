@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+from uuid import UUID
 from app.shared.enums import StepStatus
 
 @dataclass
@@ -47,7 +48,6 @@ class PipelineState:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSONB storage."""
         def _sanitize(obj: Any) -> Any:
-            from uuid import UUID
             if isinstance(obj, UUID):
                 return str(obj)
             if isinstance(obj, datetime):
