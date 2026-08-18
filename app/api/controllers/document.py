@@ -16,11 +16,14 @@ from app.schemas.dto.document import (
     DocumentListResponse,
     DeleteDocumentByFilenameRequest,
     DeleteDocumentByFilenameResponse,
+    BatchDeleteDocumentsRequest,
+    BatchDeleteDocumentsResponse,
 )
 from app.services.document.document_service import DocumentService
 from app.shared.enums import DocumentStatus
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
+
 
 
 def get_document_service(db=Depends(get_db)):
@@ -172,6 +175,29 @@ def delete_document_by_filename(
         user_agent=user_agent
     )
     return DeleteDocumentByFilenameResponse(**result)
+
+
+@router.post("/batch-delete", response_model=BatchDeleteDocumentsResponse)
+def batch_delete_documents(
+    payload: BatchDeleteDocumentsRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service)
+):
+    """
+    Xóa hàng loạt nhiều tài liệu và dọn dẹp các vector liên quan trong Qdrant.
+    """
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    result = service.batch_delete(
+        document_ids=payload.document_ids,
+        user_id=current_user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        hard=payload.hard
+    )
+    return BatchDeleteDocumentsResponse(**result)
+
 
 
 

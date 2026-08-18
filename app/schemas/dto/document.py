@@ -66,3 +66,16 @@ class DeleteDocumentByFilenameResponse(BaseModel):
     deleted_chunks: int
     filename: str
     message: str
+
+
+class BatchDeleteDocumentsRequest(BaseModel):
+    document_ids: List[uuid.UUID] = Field(..., min_length=1, description="Danh sách ID tài liệu cần xóa")
+    hard: bool = Field(False, description="Xóa cứng hay soft-delete")
+
+
+class BatchDeleteDocumentsResponse(BaseModel):
+    success: bool
+    deleted_count: int
+    deleted_document_ids: List[uuid.UUID]
+    message: str
+

@@ -27,3 +27,36 @@ class DocumentUploadResponse(BaseModel):
     status: str
 
     model_config = {"from_attributes": True}
+
+
+class ReindexDocumentResponse(BaseModel):
+    """Response DTO for re-indexing a single document."""
+    task_id: str
+    document_id: str
+    celery_task_id: Optional[str] = None
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class ReindexProjectResponse(BaseModel):
+    """Response DTO for re-indexing all documents in a project."""
+    project_id: str
+    task_ids: list[str]
+    total_queued: int
+
+    model_config = {"from_attributes": True}
+
+
+class ProjectIngestionStatsResponse(BaseModel):
+    """Response DTO for project knowledge base metrics."""
+    total_documents: int
+    total_chunks: int
+    total_size_bytes: int
+    dedup_ratio: float
+    saved_chunks: int
+    status_breakdown: dict[str, int]
+    last_synced_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+

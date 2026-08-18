@@ -1,7 +1,24 @@
 from uuid import UUID
 from typing import Dict, Any, List
 import re
-import blake3
+try:
+    import blake3
+except ImportError:
+    import hashlib
+    class _Blake3Shim:
+        def __init__(self, data: bytes = b""):
+            self._h = hashlib.sha256(data)
+        def update(self, data: bytes):
+            self._h.update(data)
+        def hexdigest(self):
+            return self._h.hexdigest()
+        def digest(self):
+            return self._h.digest()
+    class _Blake3ModuleShim:
+        @staticmethod
+        def blake3(data: bytes = b""):
+            return _Blake3Shim(data)
+    blake3 = _Blake3ModuleShim()
 import logging
 import numpy as np
 from app.observability.metrics import track_step_duration

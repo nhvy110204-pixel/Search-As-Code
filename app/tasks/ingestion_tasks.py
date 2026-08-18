@@ -76,6 +76,12 @@ def ingest_document(
         set_active_tasks(1)
         
         with UnitOfWork(self.db) as uow:
+            existing_task = uow.ingestion_tasks.get(UUID(task_id))
+            if existing_task and existing_task.status == "cancelled":
+                logger.info(f"Task {task_id} was cancelled before execution. Aborting.")
+                set_active_tasks(0)
+                return {"status": "cancelled", "chunk_count": 0, "failed_chunk_ids": []}
+
             uow.ingestion_tasks.update_task_progress(
                 UUID(task_id),
                 "processing",
@@ -96,7 +102,9 @@ def ingest_document(
             worker_id
         ))
         
-        if result.get("failed_chunk_ids"):
+        if result.get("status") == "cancelled":
+            logger.info(f"Task {task_id} was cancelled during execution.")
+        elif result.get("failed_chunk_ids"):
             track_ingestion_task_status("completed_with_warnings")
             track_failed_chunks(document_id, len(result["failed_chunk_ids"]))
         else:
@@ -111,14 +119,26 @@ def ingest_document(
     except Exception as e:
         logger.error(f"Ingestion failed for document {document_id}: {e}")
         
-        with UnitOfWork(self.db) as uow:
-            uow.ingestion_tasks.increment_attempts(UUID(task_id))
-            uow.commit()
+        is_cancelled = False
+        try:
+            with UnitOfWork(self.db) as uow:
+                current_task = uow.ingestion_tasks.get(UUID(task_id))
+                if current_task and current_task.status == "cancelled":
+                    is_cancelled = True
+                else:
+                    uow.ingestion_tasks.increment_attempts(UUID(task_id))
+                    uow.commit()
+        except Exception:
+            pass
         
         track_ingestion_task_status("failed")
         set_active_tasks(0)
 
+        if is_cancelled:
+            return {"status": "cancelled", "chunk_count": 0, "failed_chunk_ids": []}
+
         raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
+
 
 
 @celery_app.task(

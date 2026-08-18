@@ -151,3 +151,71 @@ def cancel_ingestion_task(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to cancel task: {str(e)}")
+
+
+@router.post("/reindex/{document_id}")
+def reindex_document(
+    document_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Kích hoạt re-index lại 1 tài liệu trong pipeline Ingestion.
+    """
+    try:
+        uow_factory = UnitOfWork(db)
+        ingestion_service = IngestionService(uow_factory)
+        res = ingestion_service.reindex_document(document_id, current_user.id)
+        return {
+            "success": True,
+            "data": res.model_dump()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reindex document: {str(e)}")
+
+
+@router.post("/reindex-project/{project_id}")
+def reindex_project(
+    project_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Kích hoạt re-index lại toàn bộ tài liệu trong một Project.
+    """
+    try:
+        uow_factory = UnitOfWork(db)
+        ingestion_service = IngestionService(uow_factory)
+        res = ingestion_service.reindex_project(project_id, current_user.id)
+        return {
+            "success": True,
+            "data": res.model_dump()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reindex project: {str(e)}")
+
+
+@router.get("/stats/{project_id}")
+def get_project_stats(
+    project_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lấy thống kê chỉ số tri thức & vector của một Project.
+    """
+    try:
+        uow_factory = UnitOfWork(db)
+        ingestion_service = IngestionService(uow_factory)
+        res = ingestion_service.get_project_stats(project_id)
+        return {
+            "success": True,
+            "data": res.model_dump()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get project stats: {str(e)}")
+

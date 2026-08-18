@@ -8,6 +8,10 @@ from app.services.core.base import BaseService
 from app.core.logger import service_boundary
 from app.services.core.redis_service import redis_cache_service
 from app.core.audit import log_audit_event
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny
+from app.core.qdrant import qdrant_manager
+from app.config.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,13 +92,35 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
         user_agent: Optional[str] = None,
         hard: bool = False
     ) -> bool:
-        doc = self.get(id)
+
+        doc = self.repo.get(id, include_deleted=True)
+        
+        # Always attempt to clean up Qdrant vectors for this document_id
+        try:
+            filter_cond = Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id",
+                        match=MatchValue(value=str(id))
+                    )
+                ]
+            )
+            qdrant_manager.delete_vectors_by_filter(
+                collection_name=settings.QDRANT_COLLECTION_CHUNKS,
+                filter_condition=filter_cond
+            )
+        except Exception as qerr:
+            logger.warning(f"Failed to delete Qdrant vectors for doc {id}: {qerr}")
+
         if not doc:
-            return False
+            # Document is already not in DB (idempotent delete success)
+            return True
+
         project_id = doc.project_id
         success = super().delete(id, hard=hard)
         if success and project_id:
             self._invalidate_cache(project_id)
+
         if self.uow and success:
             log_audit_event(
                 uow=self.uow,
@@ -110,7 +136,74 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
                 ip_address=ip_address,
                 user_agent=user_agent
             )
-        return success
+        return success or True
+
+
+    @service_boundary("Batch Delete Documents")
+    def batch_delete(
+        self,
+        document_ids: list[uuid.UUID],
+        user_id: Optional[uuid.UUID] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        hard: bool = False
+    ) -> Dict[str, Any]:
+
+        deleted_ids = []
+        project_ids_to_invalidate = set()
+
+        for doc_id in document_ids:
+            doc = self.get(doc_id)
+            if doc:
+                if doc.project_id:
+                    project_ids_to_invalidate.add(doc.project_id)
+                if super().delete(doc_id, hard=hard):
+                    deleted_ids.append(doc_id)
+
+        for pid in project_ids_to_invalidate:
+            self._invalidate_cache(pid)
+
+        # Cleanup Qdrant vectors for all deleted documents
+        if deleted_ids:
+            try:
+                filter_cond = Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_id",
+                            match=MatchAny(any=[str(did) for did in deleted_ids])
+                        )
+                    ]
+                )
+                qdrant_manager.delete_vectors_by_filter(
+                    collection_name=settings.QDRANT_COLLECTION_CHUNKS,
+                    filter_condition=filter_cond
+                )
+            except Exception as qerr:
+                logger.warning(f"Failed to delete Qdrant vectors for batch: {qerr}")
+
+        if self.uow and deleted_ids:
+            log_audit_event(
+                uow=self.uow,
+                user_id=user_id,
+                project_id=list(project_ids_to_invalidate)[0] if project_ids_to_invalidate else None,
+                action="document.batch_delete",
+                status="success",
+                context={
+                    "deleted_count": len(deleted_ids),
+                    "document_ids": [str(d) for d in deleted_ids],
+                    "hard_delete": hard
+                },
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+
+        return {
+            "success": True,
+            "deleted_count": len(deleted_ids),
+            "deleted_document_ids": deleted_ids,
+            "message": f"Successfully deleted {len(deleted_ids)} documents and cleaned vector indices"
+        }
+
 
     @service_boundary("Get Documents Paginated")
     def get_documents_paginated(
@@ -148,9 +241,6 @@ class DocumentService(BaseService[Document, DocumentCreate, DocumentUpdate]):
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
     ) -> Dict[str, Any]:
-        from qdrant_client.http.models import Filter, FieldCondition, MatchValue
-        from app.core.qdrant import qdrant_manager
-        from app.config.settings import settings
 
         documents = self.doc_repo.get_by_filename(filename)
         deleted_chunks = 0

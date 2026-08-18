@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional, Callable, Any
 import logging
 import asyncio
+import inspect
 
 from app.rag.ingestion.pipeline_state import PipelineState
 from app.shared.enums import DocumentStatus, IngestionTaskStatus, StepStatus
@@ -82,12 +83,14 @@ class IngestionPipeline:
                 if current_task and current_task.status == IngestionTaskStatus.CANCELLED:
                     logger.info(f"Task {task_id} was cancelled. Skipping completion update.")
                     return {"status": "cancelled", "chunk_count": 0, "failed_chunk_ids": []}
+
+                if result.get("failed_chunk_ids"):
                     document.status = DocumentStatus.COMPLETED_WITH_WARNINGS
                     document.has_partial_failures = True
                 else:
                     document.status = DocumentStatus.COMPLETED
                 
-                document.chunk_count = result["chunk_count"]
+                document.chunk_count = result.get("chunk_count", 0)
                 
                 uow.ingestion_tasks.update_task_progress(
                     task_id,
@@ -102,25 +105,31 @@ class IngestionPipeline:
                 
                 return {
                     "status": "completed",
-                    "chunk_count": result["chunk_count"],
-                    "failed_chunk_ids": result["failed_chunk_ids"],
+                    "chunk_count": result.get("chunk_count", 0),
+                    "failed_chunk_ids": result.get("failed_chunk_ids", []),
                 }
                 
             except Exception as e:
                 logger.exception(f"Pipeline failed for document {document_id}")
                 
+                current_task = uow.ingestion_tasks.get(task_id)
+                last_progress = current_task.progress if current_task else 0.0
+
                 uow.ingestion_tasks.update_task_progress(
                     task_id,
                     IngestionTaskStatus.FAILED,
-                    task.progress,
+                    last_progress,
                     error_message=str(e),
-                    last_error_step=pipeline_state.get_next_step()
+                    last_error_step=pipeline_state.get_next_step() if pipeline_state else "unknown"
                 )
                 
-                document.status = DocumentStatus.FAILED
+                document = uow.documents.get(document_id)
+                if document:
+                    document.status = DocumentStatus.FAILED
                 
                 uow.commit()
                 raise
+
     
     def _load_pipeline_state(self, document) -> PipelineState:
         if document.pipeline_state:
@@ -150,12 +159,12 @@ class IngestionPipeline:
 
         steps_progress = {
             "virus_scan": (10.0, DocumentStatus.PARSING),  # TODO: Add DocumentStatus.QUARANTINED for infected files
-            "parse": (15.0, DocumentStatus.PARSED),
-            "summary_chunk": (50.0, DocumentStatus.CHUNKING),  # Combined step
+            "parse": (40.0, DocumentStatus.PARSED),
+            "summary_chunk": (60.0, DocumentStatus.CHUNKING),  # Combined step
             "dedup": (65.0, DocumentStatus.DEDUPED),
-            "enrich": (80.0, DocumentStatus.ENRICHED),
-            "embed": (90.0, DocumentStatus.EMBEDDING),
-            "link": (95.0, DocumentStatus.LINKED),
+            "enrich": (75.0, DocumentStatus.ENRICHED),
+            "embed": (95.0, DocumentStatus.EMBEDDING),
+            "link": (98.0, DocumentStatus.LINKED),
             "finalize": (100.0, DocumentStatus.COMPLETED),
         }
         
@@ -164,6 +173,8 @@ class IngestionPipeline:
             "failed_chunk_ids": [],
         }
         
+        
+
         for step_name, (progress, doc_status) in steps_progress.items():
             # Check if task was cancelled by user
             current_task = uow.ingestion_tasks.get(task_id)
@@ -184,11 +195,16 @@ class IngestionPipeline:
                     pipeline_state.mark_step_started("chunk")
                     self._save_pipeline_state(uow, document_id, pipeline_state)
                     
+                    summary_fn = self.handlers["summary"]
+                    summary_kwargs = {"task_id": task_id} if "task_id" in inspect.signature(summary_fn).parameters else {}
                     summary_task = asyncio.create_task(
-                        self.handlers["summary"](uow, document_id, project_id, pipeline_state)
+                        summary_fn(uow, document_id, project_id, pipeline_state, **summary_kwargs)
                     )
+
+                    chunk_fn = self.handlers["chunk"]
+                    chunk_kwargs = {"task_id": task_id} if "task_id" in inspect.signature(chunk_fn).parameters else {}
                     chunk_task = asyncio.create_task(
-                        self.handlers["chunk"](uow, document_id, project_id, pipeline_state)
+                        chunk_fn(uow, document_id, project_id, pipeline_state, **chunk_kwargs)
                     )
                     
                     summary_result, chunk_result = await asyncio.gather(
@@ -240,11 +256,14 @@ class IngestionPipeline:
                     self._save_pipeline_state(uow, document_id, pipeline_state)
 
                     if step_name in self.handlers:
-                        handler_result = await self.handlers[step_name](
+                        handler_fn = self.handlers[step_name]
+                        handler_kwargs = {"task_id": task_id} if "task_id" in inspect.signature(handler_fn).parameters else {}
+                        handler_result = await handler_fn(
                             uow,
                             document_id,
                             project_id,
-                            pipeline_state
+                            pipeline_state,
+                            **handler_kwargs
                         )
 
                         if handler_result:

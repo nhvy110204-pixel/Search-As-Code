@@ -1,5 +1,5 @@
 from uuid import UUID, uuid4
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 from app.rag.embeddings.service import EmbeddingService
 from app.core.qdrant import qdrant_manager
@@ -11,6 +11,7 @@ from app.observability.metrics import (
     track_cost,
     track_qdrant_upsert
 )
+from app.shared.enums import IngestionTaskStatus
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,8 @@ async def embed_handler(
     uow,
     document_id: UUID,
     project_id: UUID,
-    pipeline_state
+    pipeline_state,
+    task_id: Optional[UUID] = None
 ) -> Dict[str, Any]:
     document = uow.documents.get(document_id)
     
@@ -164,6 +166,20 @@ async def embed_handler(
                     track_qdrant_upsert("failed")
             
             uow.commit()
+
+        # Real-time incremental progress update in DB: Embedding phase is [75.0% -> 95.0%]
+        if uow and task_id and len(new_chunk_ids) > 0:
+            try:  
+                processed_count = min(len(new_chunk_ids), i + len(batch_chunk_ids))
+                embed_pct = 75.0 + (processed_count / len(new_chunk_ids)) * 20.0
+                uow.ingestion_tasks.update_task_progress(
+                    task_id,
+                    IngestionTaskStatus.EMBEDDING,
+                    round(embed_pct, 1)
+                )
+                uow.commit()
+            except Exception as prog_err:
+                logger.debug(f"Failed to update incremental embed progress: {prog_err}")
 
     pipeline_state.embedded_chunk_ids = embedded_chunk_ids
     pipeline_state.failed_chunk_ids = failed_chunk_ids
