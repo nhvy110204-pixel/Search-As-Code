@@ -45,7 +45,8 @@ class IngestionTaskRepository(BaseRepository[IngestionTask, dict, dict]):
         error_message: Optional[str] = None,
         last_error_step: Optional[str] = None,
         worker_id: Optional[str] = None,
-        attempts: Optional[int] = None
+        attempts: Optional[int] = None,
+        progress_metadata: Optional[dict] = None
     ) -> None:
 
         status_val = status.value if hasattr(status, "value") else str(status)
@@ -66,6 +67,14 @@ class IngestionTaskRepository(BaseRepository[IngestionTask, dict, dict]):
             update_dict["worker_id"] = worker_id
         if attempts is not None:
             update_dict["attempts"] = attempts
+
+        if progress_metadata:
+            # Merge with existing metadata_
+            current_task = self.get(task_id)
+            if current_task:
+                merged_meta = dict(current_task.metadata_ or {})
+                merged_meta.update(progress_metadata)
+                update_dict["metadata_"] = merged_meta
         
         stmt = update(IngestionTask).where(IngestionTask.id == task_id).values(**update_dict)
         self.db.execute(stmt)

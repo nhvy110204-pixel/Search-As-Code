@@ -283,13 +283,18 @@ def _run_docling_conversion_batch(
     temp_file_path: str,
     profile: str = PdfProfile.DIGITAL_BOOK,
     uow=None,
-    task_id: Optional[UUID] = None
+    task_id: Optional[UUID] = None,
+    document_id: Optional[UUID] = None,
+    project_id: Optional[UUID] = None,
 ) -> str:
     """
     Converts a PDF file using Docling with the optimal profile converter and batch sizing.
     Reports incremental progress to the database, supports batch-level graceful degradation,
     and runs garbage collection between batches to prevent memory exhaustion (OOM).
     """
+    from datetime import datetime
+    from app.services.core.redis_service import redis_cache_service
+
     converter = _get_converter_for_profile(profile)
     batch_size = BATCH_SIZE_BY_PROFILE.get(profile, 40)
 
@@ -307,8 +312,43 @@ def _run_docling_conversion_batch(
         res = converter.convert(temp_file_path)
         if uow and task_id:
             try:
-                uow.ingestion_tasks.update_task_progress(task_id, IngestionTaskStatus.PARSING, 40.0)
+                stage_label = f"Đang bóc tách & trích xuất {total_pages} trang..."
+                progress_metadata = {
+                    "stage_label": stage_label,
+                    "processed_units": total_pages,
+                    "total_units": total_pages,
+                    "unit_name": "trang",
+                    "step_upper_bound": 40.0,
+                    "current_step": "parse",
+                }
+                uow.ingestion_tasks.update_task_progress(
+                    task_id,
+                    IngestionTaskStatus.PARSING,
+                    40.0,
+                    progress_metadata=progress_metadata
+                )
                 uow.commit()
+                if project_id and document_id:
+                    redis_cache_service.publish_ingestion_event(
+                        project_id=project_id,
+                        event_data={
+                            "event_id": f"evt-{task_id}-{int(datetime.utcnow().timestamp() * 1000)}",
+                            "seq_num": int(datetime.utcnow().timestamp() * 1000),
+                            "task_id": str(task_id),
+                            "document_id": str(document_id),
+                            "project_id": str(project_id),
+                            "status": IngestionTaskStatus.PARSING.value,
+                            "actual_progress": 40.0,
+                            "current_step": "parse",
+                            "stage_label": stage_label,
+                            "processed_units": total_pages,
+                            "total_units": total_pages,
+                            "unit_name": "trang",
+                            "step_upper_bound": 40.0,
+                            "estimated_duration_ms": 1000,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+                    )
             except Exception as prog_err:
                 logger.debug(f"Failed to update single-pass parse progress: {prog_err}")
         return res.export_to_markdown() if hasattr(res, "export_to_markdown") else res.document.export_to_markdown()
@@ -339,12 +379,44 @@ def _run_docling_conversion_batch(
         if uow and task_id:
             try:
                 batch_pct = 10.0 + (end_page / total_pages) * 30.0
+                stage_label = f"Đang OCR & trích xuất trang {end_page}/{total_pages}..."
+                progress_metadata = {
+                    "stage_label": stage_label,
+                    "processed_units": end_page,
+                    "total_units": total_pages,
+                    "unit_name": "trang",
+                    "step_upper_bound": 40.0,
+                    "current_step": "parse",
+                }
                 uow.ingestion_tasks.update_task_progress(
                     task_id,
                     IngestionTaskStatus.PARSING,
-                    round(batch_pct, 1)
+                    round(batch_pct, 1),
+                    progress_metadata=progress_metadata
                 )
                 uow.commit()
+
+                if project_id and document_id:
+                    redis_cache_service.publish_ingestion_event(
+                        project_id=project_id,
+                        event_data={
+                            "event_id": f"evt-{task_id}-{int(datetime.utcnow().timestamp() * 1000)}",
+                            "seq_num": int(datetime.utcnow().timestamp() * 1000),
+                            "task_id": str(task_id),
+                            "document_id": str(document_id),
+                            "project_id": str(project_id),
+                            "status": IngestionTaskStatus.PARSING.value,
+                            "actual_progress": round(batch_pct, 1),
+                            "current_step": "parse",
+                            "stage_label": stage_label,
+                            "processed_units": end_page,
+                            "total_units": total_pages,
+                            "unit_name": "trang",
+                            "step_upper_bound": 40.0,
+                            "estimated_duration_ms": 1500,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+                    )
             except Exception as prog_err:
                 logger.debug(f"Failed to update incremental parse progress: {prog_err}")
 
@@ -454,7 +526,9 @@ async def parse_handler(
                             temp_file_path,
                             current_profile,
                             uow,
-                            task_id
+                            task_id,
+                            document_id,
+                            project_id
                         )
 
                         # Quality Gate verification

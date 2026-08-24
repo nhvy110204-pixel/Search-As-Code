@@ -7,13 +7,43 @@ from pydantic import BaseModel
 class IngestionTaskResponse(BaseModel):
     """Response DTO for ingestion task status."""
     task_id: str
+    document_id: Optional[str] = None
+    project_id: Optional[str] = None
     status: str
     progress: float
+    current_step: Optional[str] = None
+    stage_label: Optional[str] = None
+    processed_units: Optional[int] = None
+    total_units: Optional[int] = None
+    unit_name: Optional[str] = None
+    step_upper_bound: Optional[float] = None
     error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     attempts: int = 0
     last_error_step: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class IngestionProgressEventDTO(BaseModel):
+    """Authoritative event envelope for Realtime SSE & Redis Pub/Sub."""
+    event_id: str
+    seq_num: int
+    task_id: str
+    document_id: str
+    project_id: str
+    status: str
+    actual_progress: float
+    current_step: Optional[str] = None
+    stage_label: Optional[str] = None
+    processed_units: Optional[int] = None
+    total_units: Optional[int] = None
+    unit_name: Optional[str] = None
+    step_upper_bound: Optional[float] = None
+    estimated_duration_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    timestamp: str
 
     model_config = {"from_attributes": True}
 

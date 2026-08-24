@@ -158,6 +158,25 @@ INGESTION_CHUNK_DEDUP_RATIO = Gauge(
     ['document_id']
 )
 
+INGESTION_RECONCILIATION_INVARIANTS_TOTAL = Counter(
+    'ingestion_reconciliation_invariants_total',
+    'Total documents evaluated by Reconciliation Gate by outcome',
+    ['outcome']  # matched, partially_available, violated_links, violated_failed_ratio
+)
+
+INGESTION_QUALITY_SCORE_DISTRIBUTION = Histogram(
+    'ingestion_quality_score_distribution',
+    'Distribution of document quality scores evaluated by Quality Gate',
+    ['profile'],
+    buckets=[0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+)
+
+INGESTION_CHUNKS_PER_DOCUMENT = Histogram(
+    'ingestion_chunks_per_document',
+    'Distribution of chunk count per ingested document',
+    buckets=[5, 20, 50, 100, 250, 500, 1000, 5000]
+)
+
 # Audit log metrics
 AUDIT_LOG_EVENTS_TOTAL = Counter(
     'audit_log_events_total',
@@ -355,6 +374,21 @@ def set_active_tasks(count: int):
 def set_chunk_dedup_ratio(document_id: str, ratio: float):
     """Set the chunk deduplication ratio for a document."""
     INGESTION_CHUNK_DEDUP_RATIO.labels(document_id=document_id).set(ratio)
+
+
+def track_reconciliation_outcome(outcome: str):
+    """Track outcome of Reconciliation Gate (matched, partially_available, violated_links, violated_failed_ratio)."""
+    INGESTION_RECONCILIATION_INVARIANTS_TOTAL.labels(outcome=outcome).inc()
+
+
+def track_quality_score(profile: str, score: float):
+    """Track Quality Gate score distribution per document profile."""
+    INGESTION_QUALITY_SCORE_DISTRIBUTION.labels(profile=profile).observe(score)
+
+
+def track_chunks_count(chunk_count: int):
+    """Track chunk count distribution for an ingested document."""
+    INGESTION_CHUNKS_PER_DOCUMENT.observe(chunk_count)
 
 
 # Audit log metric helper functions

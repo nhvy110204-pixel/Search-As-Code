@@ -2,11 +2,23 @@ from uuid import UUID
 from typing import Dict, Any
 import logging
 from openai import AsyncOpenAI
+
 from app.config.settings import settings
 from app.observability.metrics import track_cost, track_step_duration
 from app.core.utils import get_chat_cost
+from app.core.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
+
+
+@retry_with_backoff(max_retries=2, base_delay=1.0, timeout_seconds=25.0)
+async def _call_summarizer_api(client: AsyncOpenAI, model: str, messages: list, max_tokens: int, temperature: float):
+    return await client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature
+    )
 
 
 @track_step_duration("summary")
@@ -43,18 +55,21 @@ async def summary_handler(
         if len(content) > max_chars:
             content = content[:max_chars] + "..."
         
-        response = await client.chat.completions.create(
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that summarizes documents concisely. Provide a 2-3 sentence summary of the main topic and key points."
+            },
+            {
+                "role": "user",
+                "content": f"Summarize this document:\n\n{content}"
+            }
+        ]
+        
+        response = await _call_summarizer_api(
+            client=client,
             model=settings.CHAT_MODEL_NAME,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant that summarizes documents concisely. Provide a 2-3 sentence summary of the main topic and key points."
-                },
-                {
-                    "role": "user",
-                    "content": f"Summarize this document:\n\n{content}"
-                }
-            ],
+            messages=messages,
             max_tokens=300,
             temperature=0.3
         )

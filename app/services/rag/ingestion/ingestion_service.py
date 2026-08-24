@@ -170,16 +170,102 @@ class IngestionService:
             if not task:
                 raise ValueError(f"Task {task_id} not found")
 
+            metadata = task.metadata_ or {}
+            redis_snap = redis_cache_service.get_ingestion_snapshot(task_id)
+            if redis_snap:
+                stage_label = redis_snap.get("stage_label") or metadata.get("stage_label")
+                current_step = redis_snap.get("current_step") or metadata.get("current_step")
+                processed_units = redis_snap.get("processed_units") or metadata.get("processed_units")
+                total_units = redis_snap.get("total_units") or metadata.get("total_units")
+                unit_name = redis_snap.get("unit_name") or metadata.get("unit_name")
+                step_upper_bound = redis_snap.get("step_upper_bound") or metadata.get("step_upper_bound")
+            else:
+                stage_label = metadata.get("stage_label")
+                current_step = metadata.get("current_step")
+                processed_units = metadata.get("processed_units")
+                total_units = metadata.get("total_units")
+                unit_name = metadata.get("unit_name")
+                step_upper_bound = metadata.get("step_upper_bound")
+
             return IngestionTaskResponse.model_validate({
                 "task_id": str(task.id),
+                "document_id": str(task.document_id),
+                "project_id": str(task.project_id),
                 "status": task.status.value if hasattr(task.status, "value") else task.status,
                 "progress": task.progress,
+                "current_step": current_step,
+                "stage_label": stage_label,
+                "processed_units": processed_units,
+                "total_units": total_units,
+                "unit_name": unit_name,
+                "step_upper_bound": step_upper_bound,
                 "error_message": task.error_message,
                 "started_at": task.started_at,
                 "completed_at": task.completed_at,
                 "attempts": task.attempts,
                 "last_error_step": task.last_error_step,
             })
+
+    async def stream_project_ingestion_events(self, project_id: UUID, user_id: UUID):
+        """Streams realtime ingestion events for all active tasks in a project via Redis Pub/Sub."""
+        import asyncio
+
+        with self.uow_factory() as uow:
+            if not uow.projects.check_read_permission(user_id, project_id):
+                yield f": error: unauthorized\n\n"
+                return
+
+        pubsub = redis_cache_service.get_pubsub()
+        channel = f"ingestion:project:{str(project_id)}"
+
+        if not pubsub:
+            yield f": connected (fallback)\n\n"
+            try:
+                while True:
+                    await asyncio.sleep(10.0)
+                    yield f": keep-alive\n\n"
+            except (asyncio.CancelledError, GeneratorExit):
+                pass
+            return
+
+        try:
+            pubsub.subscribe(channel)
+            yield f": connected\n\n"
+            last_heartbeat = asyncio.get_event_loop().time()
+
+            while True:
+                try:
+                    message = await asyncio.to_thread(pubsub.get_message, ignore_subscribe_messages=True, timeout=1.0)
+                except Exception as msg_err:
+                    logger.debug(f"Redis get_message issue: {msg_err}")
+                    await asyncio.sleep(1.0)
+                    yield f": keep-alive\n\n"
+                    continue
+
+                now = asyncio.get_event_loop().time()
+
+                if message and message.get("type") == "message":
+                    data = message.get("data")
+                    if isinstance(data, (bytes, bytearray)):
+                        data = data.decode("utf-8")
+                    yield f"data: {data}\n\n"
+                    last_heartbeat = now
+                elif now - last_heartbeat >= 10.0:
+                    yield f": keep-alive\n\n"
+                    last_heartbeat = now
+
+                await asyncio.sleep(0.05)
+        except (asyncio.CancelledError, GeneratorExit):
+            logger.debug(f"SSE client disconnected from ingestion stream for project {project_id}")
+        except Exception as err:
+            logger.warning(f"SSE ingestion stream error for project {project_id}: {err}")
+        finally:
+            if pubsub:
+                try:
+                    pubsub.unsubscribe(channel)
+                    pubsub.close()
+                except Exception:
+                    pass
 
     @service_boundary("Cancel Ingestion Task")
     def cancel_ingestion_task(self, task_id: UUID, user_id: UUID) -> None:
@@ -188,12 +274,17 @@ class IngestionService:
             if not task:
                 raise ValueError(f"Task {task_id} not found")
 
+            cancel_meta = {
+                "stage_label": "Đã hủy tác vụ",
+                "current_step": "cancelled",
+            }
             uow.ingestion_tasks.update_task_progress(
                 task_id,
                 IngestionTaskStatus.CANCELLED,
                 progress=task.progress,
                 error_message="Task cancelled by user",
-                last_error_step="cancelled"
+                last_error_step="cancelled",
+                progress_metadata=cancel_meta
             )
 
             document = uow.documents.get(task.document_id)

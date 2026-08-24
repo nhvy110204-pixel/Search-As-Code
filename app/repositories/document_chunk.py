@@ -124,10 +124,11 @@ class DocumentChunkRepository(
         return self.db.execute(query).scalar_one_or_none()
 
     def insert_chunk_if_not_exists(self, chunk_data: Dict[str, Any]) -> Tuple[DocumentChunk, bool]:
-
         chunk_hash = chunk_data["chunk_hash"]
+        valid_cols = set(DocumentChunk.__table__.columns.keys())
+        sanitized_data = {k: v for k, v in chunk_data.items() if k in valid_cols}
         
-        stmt = insert(DocumentChunk).values(chunk_data)
+        stmt = insert(DocumentChunk).values(sanitized_data)
         stmt = stmt.on_conflict_do_nothing(index_elements=["chunk_hash"])
         
         result = self.db.execute(stmt)
@@ -140,14 +141,19 @@ class DocumentChunkRepository(
             return new_chunk, True
 
     def batch_insert_chunks_if_not_exists(self, chunks: List[Dict[str, Any]]) -> List[Tuple[DocumentChunk, bool]]:
-
         if not chunks:
             return []
+        
+        valid_cols = set(DocumentChunk.__table__.columns.keys())
+        sanitized_chunks = [
+            {k: v for k, v in chunk.items() if k in valid_cols}
+            for chunk in chunks
+        ]
         
         results = []
         chunk_hashes = {chunk["chunk_hash"] for chunk in chunks}
         
-        stmt = insert(DocumentChunk).values(chunks)
+        stmt = insert(DocumentChunk).values(sanitized_chunks)
         stmt = stmt.on_conflict_do_nothing(index_elements=["chunk_hash"])
         self.db.execute(stmt)
         self.db.flush()
@@ -156,7 +162,7 @@ class DocumentChunkRepository(
             chunk = self.find_by_chunk_hash(chunk_hash)
             if chunk:
                 original_chunk = next((c for c in chunks if c["chunk_hash"] == chunk_hash), None)
-                if original_chunk and chunk.document_id == original_chunk.get("document_id"):
+                if original_chunk and str(chunk.document_id) == str(original_chunk.get("document_id")):
                     results.append((chunk, True))
                 else:
                     results.append((chunk, False))

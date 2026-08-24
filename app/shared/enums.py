@@ -20,25 +20,38 @@ class ChatStreamStatus(str, enum.Enum):
     DISCONNECTED = "disconnected"
 
 class DocumentStatus(str, enum.Enum):
-    PENDING = "pending"          # Chờ xử lý parse văn bản
-    PARSING = "parsing"          # Đang parse văn bản
-    PARSED = "parsed"            # Đã parse xong sang markdown
-    SUMMARIZING = "summarizing"  # Đang tóm tắt tài liệu
-    CHUNKING = "chunking"        # Đang cắt nhỏ văn bản
-    DEDUPED = "deduped"          # Đã dedup chunks
-    ENRICHED = "enriched"        # Đã enrich chunks với context
-    EMBEDDING = "embedding"      # Đang sinh embedding
-    LINKED = "linked"            # Đã link chunks với document
-    PROCESSING = "processing"    # Đang cắt nhỏ (Chunking) và sinh Embedding
-    COMPLETED = "completed"      # Đã xử lý xong, sẵn sàng tra cứu RAG
-    COMPLETED_WITH_WARNINGS = "completed_with_warnings"  # Đã xử lý xong nhưng có một số chunk lỗi
-    FAILED = "failed"            # Gặp sự cố phân tích file
+    """Business status of a Document from the perspective of User and Chat Agent."""
+    PENDING = "pending"                          # Uploaded, awaiting queue scheduling
+    PROCESSING = "processing"                    # Ingestion pipeline actively executing
+    READY = "ready"                              # 100% indexed, verified by Reconciliation Gate
+    COMPLETED = "completed"                      # Legacy alias for READY
+    PARTIALLY_AVAILABLE = "partially_available"  # Available for search with minor chunk losses (< 5%)
+    COMPLETED_WITH_WARNINGS = "completed_with_warnings"  # Legacy alias for PARTIALLY_AVAILABLE
+    FAILED = "failed"                            # Unparseable or unrecoverable processing error
+    QUARANTINED = "quarantined"                  # Malware detected or severely rejected by Quality Gate
+
+    # Intermediate step markers for UI progress tracking
+    PARSING = "parsing"
+    PARSED = "parsed"
+    SUMMARIZING = "summarizing"
+    CHUNKING = "chunking"
+    DEDUPED = "deduped"
+    ENRICHED = "enriched"
+    EMBEDDING = "embedding"
+    LINKED = "linked"
+
 
 class StepStatus(str, enum.Enum):
+    """Technical execution state of an individual pipeline handler step."""
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     DONE = "done"
+    PARTIAL_SUCCESS = "partial_success"
+    FAILED_RETRYABLE = "failed_retryable"
+    FAILED_PERMANENT = "failed_permanent"
     FAILED = "failed"
+    SKIPPED = "skipped"
+
 
 class TaskStatus(str, enum.Enum):
     PENDING = "pending"
@@ -47,18 +60,33 @@ class TaskStatus(str, enum.Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+
 class IngestionTaskStatus(str, enum.Enum):
+    """Operational state of the background Ingestion Task / Queue Worker."""
     PENDING = "pending"
+    RUNNING = "running"
     CHECKING_CACHE = "checking_cache"
-    PARSING = "parsing"            # Phase 1: Converting to MD via Docling
-    SUMMARIZING = "summarizing"    # Phase 2: Generating Global Summary via LLM
-    CHUNKING = "chunking"          # Phase 3: Structural splitting
-    ENRICHING = "enriching"        # Phase 4: Anthropic Context Injection
+    PARSING = "parsing"            # Phase 1: Converting to MD via IParseProvider
+    SUMMARIZING = "summarizing"    # Phase 2: Generating Global Summary via ISummarizerProvider
+    CHUNKING = "chunking"          # Phase 3: Structural splitting & fingerprinting
+    DEDUPING = "deduping"          # Phase 3.5: Blake3 Chunk Deduplication
+    ENRICHING = "enriching"        # Phase 4: Context Injection
     EMBEDDING = "embedding"        # Phase 5: Generating Dense + Sparse vectors
+    LINKING = "linking"            # Phase 6: Document Knowledge Graph Linking
     SAVING = "saving"              # Flushing records to DB & Qdrant
-    COMPLETED = "completed"
-    FAILED = "failed"
+    COMPLETED = "completed"        # Task finished successfully
+    PARTIAL_SUCCESS = "partial_success"  # Task finished with minor acceptable warnings
+    FAILED_RETRYABLE = "failed_retryable"  # Transient failure (429, timeout), ready for auto-retry
+    FAILED_PERMANENT = "failed_permanent"  # Non-recoverable failure (corrupt file, bad auth)
+    FAILED = "failed"              # General failure
     CANCELLED = "cancelled"
+
+
+class FailureType(str, enum.Enum):
+    """Categorized failure handling directives for error classification."""
+    RETRYABLE = "retryable"        # Transient network drops, rate limits, timeouts, DB lock contention
+    PERMANENT = "permanent"        # Corrupted PDF, unsupported MIME, auth failure, zero valid text
+    QUARANTINE = "quarantine"      # Malware signature, exploit attempt, rejected by Quality Gate
 
 class ProjectStatus(str, enum.Enum):
     ACTIVE = "active"

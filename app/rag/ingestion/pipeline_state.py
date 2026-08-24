@@ -38,6 +38,13 @@ class PipelineState:
     embedded_chunk_ids: List[str] = field(default_factory=list)
     failed_chunk_ids: List[str] = field(default_factory=list)
     
+    # Reconciliation & Quarantine tracking
+    expected_chunk_count: int = 0
+    actual_link_count: int = 0
+    actual_embedded_count: int = 0
+    quarantine_reason: Optional[str] = None
+    reconciliation_report: Dict[str, Any] = field(default_factory=dict)
+    
     # Step history for debugging
     step_history: List[Dict[str, Any]] = field(default_factory=list)
     
@@ -86,6 +93,11 @@ class PipelineState:
             "existing_chunk_ids": self.existing_chunk_ids,
             "embedded_chunk_ids": self.embedded_chunk_ids,
             "failed_chunk_ids": self.failed_chunk_ids,
+            "expected_chunk_count": self.expected_chunk_count,
+            "actual_link_count": self.actual_link_count,
+            "actual_embedded_count": self.actual_embedded_count,
+            "quarantine_reason": self.quarantine_reason,
+            "reconciliation_report": self.reconciliation_report,
             "step_history": self.step_history,
             "version": self.version,
             "last_updated": self.last_updated.isoformat() if self.last_updated else None,
@@ -120,6 +132,11 @@ class PipelineState:
             existing_chunk_ids=data.get("existing_chunk_ids", []),
             embedded_chunk_ids=data.get("embedded_chunk_ids", []),
             failed_chunk_ids=data.get("failed_chunk_ids", []),
+            expected_chunk_count=data.get("expected_chunk_count", 0),
+            actual_link_count=data.get("actual_link_count", 0),
+            actual_embedded_count=data.get("actual_embedded_count", 0),
+            quarantine_reason=data.get("quarantine_reason"),
+            reconciliation_report=data.get("reconciliation_report", {}),
             step_history=data.get("step_history", []),
             version=data.get("version", "1.0"),
             last_updated=datetime.fromisoformat(data["last_updated"]) if data.get("last_updated") else None,

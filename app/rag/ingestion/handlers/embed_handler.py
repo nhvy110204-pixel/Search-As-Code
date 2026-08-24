@@ -1,10 +1,30 @@
 from uuid import UUID, uuid4
 from typing import Dict, Any, List, Optional
 import logging
+
+try:
+    import blake3
+except ImportError:
+    import hashlib
+    class _Blake3Shim:
+        def __init__(self, data: bytes = b""):
+            self._h = hashlib.sha256(data)
+        def update(self, data: bytes):
+            self._h.update(data)
+        def hexdigest(self):
+            return self._h.hexdigest()
+    class _Blake3ModuleShim:
+        @staticmethod
+        def blake3(data: bytes = b""):
+            return _Blake3Shim(data)
+    blake3 = _Blake3ModuleShim()
+
 from app.rag.embeddings.service import EmbeddingService
 from app.core.qdrant import qdrant_manager
 from app.config.settings import settings
 from app.core.utils import count_tokens, count_tokens_batch, get_embedding_cost
+from app.core.retry import retry_with_backoff
+from app.rag.ingestion.constants import DEFAULT_EMBEDDING_VERSION
 from app.observability.metrics import (
     track_step_duration,
     track_embedding_batch_size,
@@ -16,6 +36,26 @@ from app.shared.enums import IngestionTaskStatus
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 10  
+
+
+@retry_with_backoff(max_retries=3, base_delay=1.0, timeout_seconds=20.0)
+async def _embed_batch_with_retry(embedding_service: EmbeddingService, texts: List[str]) -> List[List[float]]:
+    return await embedding_service.embed_texts_async(texts)
+
+
+@retry_with_backoff(max_retries=3, base_delay=1.0, timeout_seconds=20.0)
+async def _embed_single_with_retry(embedding_service: EmbeddingService, text: str) -> List[float]:
+    return await embedding_service.embed_text_async(text)
+
+
+@retry_with_backoff(max_retries=3, base_delay=0.5, timeout_seconds=15.0)
+def _upsert_qdrant_with_retry(collection_name: str, embedding_id: UUID, vector: List[float], payload: dict):
+    qdrant_manager.upsert_vector(
+        collection_name=collection_name,
+        embedding_id=embedding_id,
+        vector=vector,
+        payload=payload
+    )  
 
 
 @track_step_duration("embed")
@@ -83,7 +123,7 @@ async def embed_handler(
             continue
         try:
             texts = [item["content"] for item in batch_data]
-            vectors = await embedding_service.embed_texts_async(texts)
+            vectors = await _embed_batch_with_retry(embedding_service, texts)
             
             tokens = count_tokens_batch(texts, settings.EMBEDDING_MODEL_NAME)
             cost = get_embedding_cost(tokens, settings.EMBEDDING_MODEL_NAME)
@@ -96,7 +136,12 @@ async def embed_handler(
                 try:
                     embedding_id = uuid4()
                     
-                    qdrant_manager.upsert_vector(
+                    # 4-tier Embedding Fingerprint: tracks model versioning and vector deterministic cache
+                    hasher = blake3.blake3()
+                    hasher.update(f"{chunk_id}:{settings.EMBEDDING_MODEL_NAME}:{DEFAULT_EMBEDDING_VERSION}".encode('utf-8'))
+                    embedding_fingerprint = hasher.hexdigest()
+                    
+                    _upsert_qdrant_with_retry(
                         collection_name=settings.QDRANT_COLLECTION_CHUNKS,
                         embedding_id=embedding_id,
                         vector=vector,
@@ -105,6 +150,7 @@ async def embed_handler(
                             "chunk_index": item["chunk_index"],
                             "content": item["content"],
                             "project_id": str(project_id),
+                            "embedding_fingerprint": embedding_fingerprint,
                         },
                     )
                     
@@ -133,14 +179,18 @@ async def embed_handler(
                 chunk_id_str = item["chunk_id_str"]
                 
                 try:
-                    vector = await embedding_service.embed_text_async(item["content"])
+                    vector = await _embed_single_with_retry(embedding_service, item["content"])
                     
                     tokens = count_tokens(item["content"], settings.EMBEDDING_MODEL_NAME)
                     cost = get_embedding_cost(tokens, settings.EMBEDDING_MODEL_NAME)
                     track_cost("embedding", cost)
                     
                     embedding_id = uuid4()
-                    qdrant_manager.upsert_vector(
+                    hasher = blake3.blake3()
+                    hasher.update(f"{chunk_id}:{settings.EMBEDDING_MODEL_NAME}:{DEFAULT_EMBEDDING_VERSION}".encode('utf-8'))
+                    embedding_fingerprint = hasher.hexdigest()
+
+                    _upsert_qdrant_with_retry(
                         collection_name=settings.QDRANT_COLLECTION_CHUNKS,
                         embedding_id=embedding_id,
                         vector=vector,
@@ -149,6 +199,7 @@ async def embed_handler(
                             "chunk_index": item["chunk_index"],
                             "content": item["content"],
                             "project_id": str(project_id),
+                            "embedding_fingerprint": embedding_fingerprint,
                         },
                     )
                     
@@ -170,26 +221,65 @@ async def embed_handler(
         # Real-time incremental progress update in DB: Embedding phase is [75.0% -> 95.0%]
         if uow and task_id and len(new_chunk_ids) > 0:
             try:  
+                from datetime import datetime
+                from app.services.core.redis_service import redis_cache_service
+
                 processed_count = min(len(new_chunk_ids), i + len(batch_chunk_ids))
-                embed_pct = 75.0 + (processed_count / len(new_chunk_ids)) * 20.0
+                total_chunks = len(new_chunk_ids)
+                embed_pct = 75.0 + (processed_count / total_chunks) * 20.0
+                stage_label = f"Đang vector hóa tri thức ({processed_count}/{total_chunks} chunks)..."
+                progress_metadata = {
+                    "stage_label": stage_label,
+                    "processed_units": processed_count,
+                    "total_units": total_chunks,
+                    "unit_name": "chunks",
+                    "step_upper_bound": 95.0,
+                    "current_step": "embed",
+                }
                 uow.ingestion_tasks.update_task_progress(
                     task_id,
                     IngestionTaskStatus.EMBEDDING,
-                    round(embed_pct, 1)
+                    round(embed_pct, 1),
+                    progress_metadata=progress_metadata
                 )
                 uow.commit()
+
+                if project_id and document_id:
+                    redis_cache_service.publish_ingestion_event(
+                        project_id=project_id,
+                        event_data={
+                            "event_id": f"evt-{task_id}-{int(datetime.utcnow().timestamp() * 1000)}",
+                            "seq_num": int(datetime.utcnow().timestamp() * 1000),
+                            "task_id": str(task_id),
+                            "document_id": str(document_id),
+                            "project_id": str(project_id),
+                            "status": IngestionTaskStatus.EMBEDDING.value,
+                            "actual_progress": round(embed_pct, 1),
+                            "current_step": "embed",
+                            "stage_label": stage_label,
+                            "processed_units": processed_count,
+                            "total_units": total_chunks,
+                            "unit_name": "chunks",
+                            "step_upper_bound": 95.0,
+                            "estimated_duration_ms": 800,
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+                    )
             except Exception as prog_err:
                 logger.debug(f"Failed to update incremental embed progress: {prog_err}")
 
     pipeline_state.embedded_chunk_ids = embedded_chunk_ids
     pipeline_state.failed_chunk_ids = failed_chunk_ids
+    pipeline_state.actual_embedded_count = len(embedded_chunk_ids) + len(pipeline_state.existing_chunk_ids)
     
     logger.info(
         f"Embedding completed for document {document_id}: "
-        f"{len(embedded_chunk_ids)} embedded, {len(failed_chunk_ids)} failed"
+        f"{len(embedded_chunk_ids)} newly embedded, {len(pipeline_state.existing_chunk_ids)} existing, "
+        f"{len(failed_chunk_ids)} failed (actual_embedded_count={pipeline_state.actual_embedded_count})"
     )
     
     return {
         "embedded_chunk_ids": embedded_chunk_ids,
         "failed_chunk_ids": failed_chunk_ids,
+        "actual_embedded_count": pipeline_state.actual_embedded_count,
     }

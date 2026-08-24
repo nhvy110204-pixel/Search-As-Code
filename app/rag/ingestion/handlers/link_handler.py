@@ -40,8 +40,13 @@ async def link_handler(
             except Exception as inner_e:
                 logger.error(f"Failed to create individual link for chunk {chunk_id}: {inner_e}")
     
-    logger.info(f"Created {linked_count} chunk-document links for document {document_id}")
+    pipeline_state.actual_link_count = linked_count
+    logger.info(
+        f"Created {linked_count} chunk-document links for document {document_id} "
+        f"(actual_link_count={pipeline_state.actual_link_count})"
+    )
     
     return {
         "linked_count": linked_count,
+        "actual_link_count": linked_count,
     }

@@ -96,5 +96,40 @@ class RedisCacheService:
         except Exception as e:
             logger.error(f"Lỗi không xác định trong quá trình hủy cache (invalidate_history): {e}")
 
+    def publish_ingestion_event(self, project_id: str | uuid.UUID, event_data: dict) -> None:
+        """Phát sự kiện tiến trình Ingestion qua Redis Pub/Sub và lưu snapshot mới nhất."""
+        if not self.redis:
+            return
+        try:
+            channel = f"ingestion:project:{str(project_id)}"
+            payload = json.dumps(event_data, default=str)
+            self.redis.publish(channel, payload)
+
+            task_id = event_data.get("task_id")
+            if task_id:
+                snap_key = f"ingestion:task:{task_id}:snapshot"
+                self.redis.setex(snap_key, 3600, payload)
+        except Exception as e:
+            logger.debug(f"Không thể publish ingestion event lên Redis: {e}")
+
+    def get_ingestion_snapshot(self, task_id: str | uuid.UUID) -> Optional[dict]:
+        """Đọc snapshot tiến trình mới nhất từ Redis cache (sub-millisecond)."""
+        if not self.redis:
+            return None
+        try:
+            snap_key = f"ingestion:task:{str(task_id)}:snapshot"
+            raw = self.redis.get(snap_key)
+            if raw:
+                return json.loads(raw)
+        except Exception as e:
+            logger.debug(f"Không thể đọc snapshot ingestion từ Redis: {e}")
+        return None
+
+    def get_pubsub(self):
+        """Khởi tạo PubSub listener từ Redis client."""
+        if not self.redis:
+            return None
+        return self.redis.pubsub()
+
 
 redis_cache_service = RedisCacheService()

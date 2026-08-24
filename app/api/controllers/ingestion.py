@@ -107,6 +107,33 @@ async def upload_documents_batch(
         raise HTTPException(status_code=500, detail=f"Batch upload failed: {str(e)}")
 
 
+@router.get("/events")
+async def stream_ingestion_events(
+    project_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Server-Sent Events (SSE) stream for real-time Ingestion updates of a project.
+    """
+    try:
+        from fastapi.responses import StreamingResponse
+        uow_factory = UnitOfWork(db)
+        ingestion_service = IngestionService(uow_factory)
+        
+        return StreamingResponse(
+            ingestion_service.stream_project_ingestion_events(project_id, current_user.id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to open event stream: {str(e)}")
+
+
 @router.get("/status/{task_id}")
 def get_ingestion_status(
     task_id: UUID,

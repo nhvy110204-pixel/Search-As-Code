@@ -1,3 +1,4 @@
+import uuid
 from uuid import UUID
 from typing import Dict, Any, List
 import re
@@ -234,10 +235,14 @@ async def chunk_handler(
         hasher.update(raw_chunk["content"].encode('utf-8'))
         chunk_hash = hasher.hexdigest()
         
-        chunk_hashes.append(chunk_hash)
-
-        embedding_id = UUID(int=0)  
+        # 4-tier Chunk Fingerprint: guarantees deterministic uniqueness per document slot
+        fingerprint_hasher = blake3.blake3()
+        fingerprint_hasher.update(f"{document_id}:{idx}:{chunk_hash}".encode('utf-8'))
+        chunk_fingerprint = fingerprint_hasher.hexdigest()
         
+        chunk_hashes.append(chunk_hash)
+        embedding_id = uuid.uuid4()
+
         chunk_data = {
             "document_id": str(document_id),
             "chunk_index": idx,
@@ -246,17 +251,25 @@ async def chunk_handler(
             "embedding_id": str(embedding_id),
             "embed_status": "pending",
             "chunk_source": "auto",
+            "meta_data": {
+                "chunk_fingerprint": chunk_fingerprint,
+            },
         }
         
         chunk_data_list.append(chunk_data)
     
     pipeline_state.chunk_hashes = chunk_hashes
+    pipeline_state.expected_chunk_count = len(chunk_data_list)
     pipeline_state.chunk.metadata["chunk_data_list"] = chunk_data_list
     
-    logger.info(f"Generated {len(chunk_data_list)} chunks for document {document_id}")
+    logger.info(
+        f"Generated {len(chunk_data_list)} chunks for document {document_id} "
+        f"(expected_chunk_count={pipeline_state.expected_chunk_count})"
+    )
     
     return {
         "chunk_count": len(chunk_data_list),
+        "expected_chunk_count": len(chunk_data_list),
         "chunk_hashes": chunk_hashes,
         "chunk_data_list": chunk_data_list,
     }

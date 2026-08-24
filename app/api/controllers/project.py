@@ -26,6 +26,7 @@ def get_project_service(db=Depends(get_db)):
         yield ProjectService(repository=uow.projects, uow=uow)
 
 
+@router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(
     payload: ProjectCreateRequest,
@@ -51,20 +52,7 @@ def create_project(
         )
 
 
-@router.get("/{project_id}", response_model=ProjectResponse)
-def get_project(
-    project_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
-    service: ProjectService = Depends(get_project_service),
-):
-    project = service.get_with_stats(id=project_id)
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    if project.owner_user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project does not belong to user")
-    return project
-
-
+@router.get("", response_model=ProjectListResponse)
 @router.get("/", response_model=ProjectListResponse)
 def list_projects(
     page: int = Query(1, ge=1),
@@ -81,6 +69,20 @@ def list_projects(
         filters["name"] = name
 
     return service.get_projects_paginated(page=page, page_size=page_size, filters=filters)
+
+
+@router.get("/{project_id}", response_model=ProjectResponse)
+def get_project(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    service: ProjectService = Depends(get_project_service),
+):
+    project = service.get_with_stats(id=project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if project.owner_user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project does not belong to user")
+    return project
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
