@@ -230,9 +230,24 @@ async def chunk_handler(
     chunk_data_list = []
     chunk_hashes = []
     
+    current_page_number: Optional[int] = 1
+
     for idx, raw_chunk in enumerate(raw_chunks):
+        content = raw_chunk["content"]
+
+        # Extract or track page number if present in tag or header
+        page_num_match = re.search(r'<!--\s*page:\s*(\d+)(?:-\d+)?\s*-->|##\s*Trang\s*(\d+)|##\s*Page\s*(\d+)', content, re.IGNORECASE)
+        if page_num_match:
+            for g in page_num_match.groups():
+                if g:
+                    try:
+                        current_page_number = int(g)
+                        break
+                    except ValueError:
+                        pass
+
         hasher = blake3.blake3()
-        hasher.update(raw_chunk["content"].encode('utf-8'))
+        hasher.update(content.encode('utf-8'))
         chunk_hash = hasher.hexdigest()
         
         # 4-tier Chunk Fingerprint: guarantees deterministic uniqueness per document slot
@@ -242,17 +257,21 @@ async def chunk_handler(
         
         chunk_hashes.append(chunk_hash)
         embedding_id = uuid.uuid4()
+        token_count = max(1, len(content.split()))
 
         chunk_data = {
             "document_id": str(document_id),
             "chunk_index": idx,
-            "content": raw_chunk["content"],
+            "content": content,
             "chunk_hash": chunk_hash,
             "embedding_id": str(embedding_id),
+            "token_count": token_count,
+            "page_number": current_page_number,
             "embed_status": "pending",
             "chunk_source": "auto",
             "meta_data": {
                 "chunk_fingerprint": chunk_fingerprint,
+                "page_number": current_page_number,
             },
         }
         

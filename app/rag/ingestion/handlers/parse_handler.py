@@ -1,10 +1,12 @@
 import os
 import gc
+import re
 import logging
 import tempfile
 import asyncio
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, List
 from uuid import UUID
+from datetime import datetime
 
 try:
     import pypdf
@@ -19,6 +21,7 @@ except ImportError:
 from app.shared.enums import IngestionTaskStatus
 from app.core.compression import decompress_data
 from app.observability.metrics import track_step_duration
+from app.services.core.redis_service import redis_cache_service
 from app.rag.ingestion.quality_gate import (
     QualityAssessment,
     evaluate_parse_quality,
@@ -53,8 +56,8 @@ except ImportError:
             pass
 
 
-
 logger = logging.getLogger(__name__)
+
 
 class PdfProfile:
     """Classified profiles for PDF documents to optimize parsing strategy and resource consumption."""
@@ -65,7 +68,7 @@ class PdfProfile:
 
 # Adaptive batch sizing per profile to guarantee memory safety and high throughput
 BATCH_SIZE_BY_PROFILE: Dict[str, int] = {
-    PdfProfile.DIGITAL_BOOK: 40,
+    PdfProfile.DIGITAL_BOOK: 30,
     PdfProfile.SLIDE_VISUAL: 15,
     PdfProfile.SCANNED: 15,
 }
@@ -81,10 +84,11 @@ SLIDE_KEYWORDS: Set[str] = {
 _fast_docling_converter: Optional[DocumentConverter] = None
 _bitmap_ocr_docling_converter: Optional[DocumentConverter] = None
 _full_ocr_docling_converter: Optional[DocumentConverter] = None
+_generic_docling_converter: Optional[DocumentConverter] = None
 
 
 def _get_fast_converter() -> DocumentConverter:
-    """Fast converter: native PDF text and structure extraction without OCR overhead."""
+    """Fast converter: native PDF text, table, and structure extraction without OCR overhead."""
     global _fast_docling_converter
     if _fast_docling_converter is None:
         opts = PdfPipelineOptions()
@@ -100,7 +104,7 @@ def _get_fast_converter() -> DocumentConverter:
 def _get_bitmap_ocr_converter() -> DocumentConverter:
     """
     Bitmap OCR converter: keeps native selectable text while running EasyOCR
-    on embedded diagrams, architecture boxes, and chart images (bitmap_area_threshold=0.03).
+    on embedded diagrams, architecture boxes, and chart images.
     """
     global _bitmap_ocr_docling_converter
     if _bitmap_ocr_docling_converter is None:
@@ -137,6 +141,14 @@ def _get_full_ocr_converter() -> DocumentConverter:
     return _full_ocr_docling_converter
 
 
+def _get_generic_converter() -> DocumentConverter:
+    """Generic converter for DOCX, PPTX, HTML, Markdown."""
+    global _generic_docling_converter
+    if _generic_docling_converter is None:
+        _generic_docling_converter = DocumentConverter()
+    return _generic_docling_converter
+
+
 def _get_converter_for_profile(profile: str) -> DocumentConverter:
     """Returns the dedicated singleton converter corresponding to the classified PDF profile."""
     if profile == PdfProfile.SLIDE_VISUAL:
@@ -156,13 +168,22 @@ def _free_memory() -> None:
             pass
 
 
+def _sanitize_markdown(text: str) -> str:
+    """Cleans up raw markdown content while preserving tables and formatting."""
+    if not text:
+        return ""
+    # Remove null bytes and carriage returns
+    sanitized = text.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
+    # Collapse 3+ consecutive newlines to 2
+    sanitized = re.sub(r"\n{3,}", "\n\n", sanitized)
+    return sanitized.strip()
+
+
 def _detect_pdf_profile(temp_file_path: str, file_name: str, max_check_pages: int = 15) -> str:
     """
     Intelligent multi-criteria PDF profile classifier.
     Examines page aspect ratio (Landscape vs Portrait), selectable text density,
     embedded image presence, and filename heuristics.
-
-    Returns one of: PdfProfile.DIGITAL_BOOK, PdfProfile.SLIDE_VISUAL, PdfProfile.SCANNED.
     """
     lower_name = (file_name or "").lower()
     has_slide_keyword = any(kw in lower_name for kw in SLIDE_KEYWORDS)
@@ -205,7 +226,6 @@ def _detect_pdf_profile(temp_file_path: str, file_name: str, max_check_pages: in
                 if len(page.images) > 0:
                     pages_with_images_count += 1
                 else:
-                    # Fallback check on XObject dictionary
                     resources = page.get("/Resources")
                     if resources and isinstance(resources, dict):
                         xobjects = resources.get("/XObject")
@@ -232,10 +252,7 @@ def _detect_pdf_profile(temp_file_path: str, file_name: str, max_check_pages: in
         if extracted_chars_total < 40 and (image_page_ratio > 0.4 or total_pages <= 3):
             return PdfProfile.SCANNED
 
-        # B. Slide / Visual Check:
-        #    1. Majority landscape orientation (Powerpoint / Keynote decks)
-        #    2. Filename keyword match combined with low-to-medium text density or images
-        #    3. High image presence combined with low text density (< 350 chars/page)
+        # B. Slide / Visual Check
         if landscape_ratio >= 0.5:
             return PdfProfile.SLIDE_VISUAL
 
@@ -256,6 +273,7 @@ def _detect_pdf_profile(temp_file_path: str, file_name: str, max_check_pages: in
 def _fallback_pdf_extraction(temp_file_path: str, start_page: int = 1, end_page: Optional[int] = None) -> str:
     """
     Fallback text extraction using pypdf for a given 1-indexed page range [start_page, end_page].
+    Injects structured page header tags for downstream citation and chunk identification.
     """
     try:
         if not pypdf:
@@ -271,12 +289,36 @@ def _fallback_pdf_extraction(temp_file_path: str, start_page: int = 1, end_page:
             page = reader.pages[i]
             txt = page.extract_text()
             if txt and txt.strip():
-                text_parts.append(f"## Page {i + 1}\n\n{txt.strip()}")
+                text_parts.append(f"<!-- page: {i + 1} -->\n\n## Trang {i + 1}\n\n{txt.strip()}")
         if text_parts:
             return "\n\n".join(text_parts)
     except Exception as err:
         logger.warning(f"pypdf fallback extraction failed for pages {start_page}-{end_page}: {err}")
     return ""
+
+
+def _slice_pdf_to_temp_file(reader: "pypdf.PdfReader", start_idx: int, end_idx: int) -> str:
+    """
+    Slices a 0-indexed page range [start_idx, end_idx) from reader into a new temporary PDF file.
+    Returns the absolute path to the temporary file.
+    """
+    writer = pypdf.PdfWriter()
+    for i in range(start_idx, end_idx):
+        writer.add_page(reader.pages[i])
+
+    temp_slice = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    writer.write(temp_slice)
+    temp_slice.close()
+    return temp_slice.name
+
+
+def _export_docling_result_to_markdown(res: Any) -> str:
+    """Safely extracts markdown string from Docling ConversionResult."""
+    if hasattr(res, "document") and hasattr(res.document, "export_to_markdown"):
+        return res.document.export_to_markdown()
+    if hasattr(res, "export_to_markdown"):
+        return res.export_to_markdown()
+    return str(res)
 
 
 def _run_docling_conversion_batch(
@@ -289,16 +331,14 @@ def _run_docling_conversion_batch(
 ) -> str:
     """
     Converts a PDF file using Docling with the optimal profile converter and batch sizing.
-    Reports incremental progress to the database, supports batch-level graceful degradation,
-    and runs garbage collection between batches to prevent memory exhaustion (OOM).
+    Uses physical sub-PDF slicing for large files (> batch_size) to guarantee 100% table & layout
+    extraction fidelity without hitting unsupported Docling convert() arguments or OOM issues.
     """
-    from datetime import datetime
-    from app.services.core.redis_service import redis_cache_service
-
     converter = _get_converter_for_profile(profile)
-    batch_size = BATCH_SIZE_BY_PROFILE.get(profile, 40)
+    batch_size = BATCH_SIZE_BY_PROFILE.get(profile, 30)
 
     total_pages = 1
+    reader = None
     try:
         if pypdf:
             reader = pypdf.PdfReader(temp_file_path)
@@ -306,10 +346,12 @@ def _run_docling_conversion_batch(
     except Exception as e:
         logger.warning(f"Could not determine total pages with pypdf: {e}")
 
-    # Single-pass conversion for short documents
+    # Single-pass conversion for short documents (<= batch_size)
     if total_pages <= batch_size:
-        logger.info(f"Processing PDF ({total_pages} pages, profile={profile}) in single pass")
+        logger.info(f"Processing PDF ({total_pages} pages, profile={profile}) in single pass with Docling")
         res = converter.convert(temp_file_path)
+        md_text = _export_docling_result_to_markdown(res)
+
         if uow and task_id:
             try:
                 stage_label = f"Đang bóc tách & trích xuất {total_pages} trang..."
@@ -351,35 +393,62 @@ def _run_docling_conversion_batch(
                     )
             except Exception as prog_err:
                 logger.debug(f"Failed to update single-pass parse progress: {prog_err}")
-        return res.export_to_markdown() if hasattr(res, "export_to_markdown") else res.document.export_to_markdown()
 
-    # Multi-batch conversion for larger documents
-    logger.info(f"Processing PDF ({total_pages} pages, profile={profile}) in batches of {batch_size} pages")
-    markdown_sections = []
+        _free_memory()
+        return _sanitize_markdown(md_text)
 
-    for start_page in range(1, total_pages + 1, batch_size):
-        end_page = min(start_page + batch_size - 1, total_pages)
-        logger.info(f"Converting PDF batch: pages {start_page} to {end_page} of {total_pages} (profile={profile})")
+    # Multi-batch conversion via Sub-PDF Slicing for large documents
+    logger.info(
+        f"Processing large PDF ({total_pages} pages, profile={profile}) via "
+        f"Sub-PDF Slicing in batches of {batch_size} pages"
+    )
+    markdown_sections: List[str] = []
 
-        batch_md = None
+    if reader is None and pypdf:
+        reader = pypdf.PdfReader(temp_file_path)
+
+    for start_idx in range(0, total_pages, batch_size):
+        end_idx = min(start_idx + batch_size, total_pages)
+        start_page = start_idx + 1
+        end_page = end_idx
+
+        logger.info(f"Converting PDF slice: pages {start_page} to {end_page} of {total_pages} (profile={profile})")
+
+        slice_temp_path = None
+        slice_md = None
+
         try:
-            res = converter.convert(temp_file_path, page_range=(start_page, end_page))
-            batch_md = res.export_to_markdown() if hasattr(res, "export_to_markdown") else res.document.export_to_markdown()
+            if reader:
+                slice_temp_path = _slice_pdf_to_temp_file(reader, start_idx, end_idx)
+                res = converter.convert(slice_temp_path)
+                slice_md = _export_docling_result_to_markdown(res)
+            else:
+                # Fallback if pypdf reader is unavailable
+                res = converter.convert(temp_file_path)
+                slice_md = _export_docling_result_to_markdown(res)
+                break
         except Exception as batch_err:
             logger.warning(
-                f"Docling batch failed for pages {start_page}-{end_page}: {batch_err}. "
-                f"Falling back gracefully to pypdf for this batch."
+                f"Docling slice conversion failed for pages {start_page}-{end_page}: {batch_err}. "
+                f"Falling back gracefully to pypdf for this slice."
             )
-            batch_md = _fallback_pdf_extraction(temp_file_path, start_page=start_page, end_page=end_page)
+            slice_md = _fallback_pdf_extraction(temp_file_path, start_page=start_page, end_page=end_page)
+        finally:
+            if slice_temp_path and os.path.exists(slice_temp_path):
+                try:
+                    os.unlink(slice_temp_path)
+                except Exception as clean_err:
+                    logger.debug(f"Failed to delete slice temp file {slice_temp_path}: {clean_err}")
 
-        if batch_md and batch_md.strip():
-            markdown_sections.append(batch_md.strip())
+        if slice_md and slice_md.strip():
+            page_tag = f"<!-- page: {start_page}-{end_page} -->\n\n"
+            markdown_sections.append(page_tag + slice_md.strip())
 
         # Real-time incremental progress update in DB: Parse phase is [10.0% -> 40.0%]
         if uow and task_id:
             try:
                 batch_pct = 10.0 + (end_page / total_pages) * 30.0
-                stage_label = f"Đang OCR & trích xuất trang {end_page}/{total_pages}..."
+                stage_label = f"Đang bóc tách & OCR trang {end_page}/{total_pages}..."
                 progress_metadata = {
                     "stage_label": stage_label,
                     "processed_units": end_page,
@@ -423,14 +492,16 @@ def _run_docling_conversion_batch(
         # Explicit memory cleanup after each batch
         _free_memory()
 
-    return "\n\n".join(markdown_sections)
+    full_markdown = "\n\n".join(markdown_sections)
+    return _sanitize_markdown(full_markdown)
 
 
 def _run_docling_generic_conversion(temp_file_path: str) -> str:
-    """Converts non-PDF formats (e.g., DOCX) using Docling fast converter."""
-    converter = _get_fast_converter()
+    """Converts non-PDF formats (DOCX, PPTX, HTML) using Docling Generic converter."""
+    converter = _get_generic_converter()
     res = converter.convert(temp_file_path)
-    return res.export_to_markdown() if hasattr(res, "export_to_markdown") else res.document.export_to_markdown()
+    raw_md = _export_docling_result_to_markdown(res)
+    return _sanitize_markdown(raw_md)
 
 
 @track_step_duration("parse")
@@ -444,8 +515,8 @@ async def parse_handler(
     """
     Tier 5 Ingestion Pipeline Handler for document parsing.
     Supports intelligent PDF profiling (Digital Book / Slide Visual / Scanned),
-    bitmap diagram OCR, adaptive batch sizing, and an automated Quality Gate with
-    self-healing escalation feedback loops.
+    bitmap diagram OCR, Sub-PDF Slicing for large documents, and an automated
+    Quality Gate with self-healing escalation feedback loops.
     """
     document = uow.documents.get(document_id)
 
@@ -476,7 +547,12 @@ async def parse_handler(
             try:
                 markdown_content = file_content.decode('utf-8')
             except UnicodeDecodeError:
-                markdown_content = file_content.decode('latin-1')
+                try:
+                    markdown_content = file_content.decode('utf-8-sig')
+                except UnicodeDecodeError:
+                    markdown_content = file_content.decode('latin-1', errors='replace')
+
+            markdown_content = _sanitize_markdown(markdown_content)
 
             # Evaluate quality for text files
             assessment = evaluate_parse_quality(
@@ -486,7 +562,7 @@ async def parse_handler(
                 current_profile="TEXT"
             )
 
-    elif file_ext in ('.pdf', '.docx'):
+    elif file_ext in ('.pdf', '.docx', '.pptx', '.html', '.htm'):
         if file_content:
             temp_file_path = None
             try:
@@ -592,7 +668,7 @@ async def parse_handler(
                             )
                             break
                 else:
-                    # Generic format (e.g. DOCX)
+                    # Generic format (DOCX, PPTX, HTML)
                     markdown_content = await asyncio.to_thread(
                         _run_docling_generic_conversion,
                         temp_file_path
@@ -601,7 +677,7 @@ async def parse_handler(
                         markdown_content=markdown_content or "",
                         total_pages=1,
                         file_size_bytes=file_size_bytes,
-                        current_profile="DOCX"
+                        current_profile="GENERIC"
                     )
 
                 logger.info(f"Successfully parsed {document.file_name} ({len(markdown_content or '')} chars)")
